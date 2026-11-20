@@ -183,6 +183,11 @@ export async function finalizeRequirement({ authorization, body }) {
     });
     return { status: 200, payload: { id } };
   } catch (error) {
+    console.error('Requirement submission finalization failed.', {
+      name: error?.name,
+      code: error?.code,
+      message: error?.message,
+    });
     return {
       status: error.httpStatus || 500,
       payload: { error: error.httpStatus ? error.message : 'Unable to finalize this requirement.' },

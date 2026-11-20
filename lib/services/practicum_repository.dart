@@ -263,6 +263,33 @@ class PracticumRepository {
     return result;
   }
 
+  Future<void> managePendingStudent(
+    String studentNumber, {
+    required bool resendInvitation,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    final uri = Uri.parse(
+      AppConfig.coordinatorApprovalApiUrl,
+    ).resolve('/api/student-roster');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'action': resendInvitation ? 'resend' : 'remove',
+        'studentNumber': studentNumber,
+      }),
+    );
+    final result = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw StateError(
+        result['error'] as String? ?? 'Could not update the pending student.',
+      );
+    }
+  }
+
   Stream<List<AppUser>> watchStudentsFor(AppUser actor) =>
       _watchStudents(actor);
 

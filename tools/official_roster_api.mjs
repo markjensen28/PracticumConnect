@@ -1,7 +1,11 @@
+import { createHash } from 'node:crypto';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureAdminApp } from './staff_claims_core.mjs';
-import { planRoster, provisionStudent } from './student_enrollment_core.mjs';
+import { managePendingStudent, planRoster, provisionStudent } from './student_enrollment_core.mjs';
+
+const rosterNumberKey = (number) => String(number || '').trim().normalize('NFKC').toUpperCase();
+const rosterDigest = (text) => createHash('sha256').update(text).digest('hex');
 
 export function validRosterOrigin(value, localServer = false) {
   try {
@@ -27,17 +31,35 @@ export async function importOfficialRoster({ authorization, body }, localServer 
   const actor = (await db.collection('users').doc(identity.uid).get()).data();
   if (!actor?.active || actor.role !== 'admin')
     return { status: 403, payload: { error: 'Only the college administrator can import the roster.' } };
+  const action = body?.action;
+  const rosterAction = action === 'preview' || action === 'import';
+  const pendingAction = action === 'resend' || action === 'remove';
   if (
-    !['preview', 'import'].includes(body?.action) ||
-    !Array.isArray(body.rows) ||
-    body.rows.length > 100 ||
-    (body.action === 'import' && body.rows.length !== 1)
+    (!rosterAction && !pendingAction) ||
+    (rosterAction && (!Array.isArray(body?.rows) || body.rows.length > 100 ||
+      (action === 'import' && body.rows.length !== 1))) ||
+    (pendingAction && (typeof body?.studentNumber !== 'string' || !rosterNumberKey(body.studentNumber)))
   )
     return {
       status: 400,
-      payload: { error: 'Preview up to 100 rows and import each confirmed row individually.' },
+      payload: { error: 'Choose a valid roster action and provide its required student data.' },
     };
   try {
+    if (pendingAction) {
+      if (action === 'resend') {
+        if (
+          !process.env.RESEND_API_KEY ||
+          !process.env.SCHOOL_EMAIL_FROM ||
+          !validRosterOrigin(process.env.APP_ORIGIN, localServer)
+        )
+          return {
+            status: 503,
+            payload: { error: 'Configure the public school app URL and server email delivery before resending.' },
+          };
+      }
+      const result = await managePendingStudent(db, auth, body.studentNumber, action);
+      return { status: 200, payload: { ok: true, ...result } };
+    }
     const plan = await planRoster(db, auth, body.rows);
     if (body.action === 'preview')
       return { status: 200, payload: { rows: plan.length, legacy: plan.filter((r) => r.legacy).length } };

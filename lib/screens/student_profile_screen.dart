@@ -44,6 +44,66 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
   String _query = '';
 
   bool _importing = false;
+  final Set<String> _pendingStudentActions = <String>{};
+
+  Future<void> _managePendingStudent(AppUser student, String action) async {
+    final studentNumber = student.studentNumber;
+    if (studentNumber == null || studentNumber.trim().isEmpty) return;
+    final resend = action == 'resend';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          resend ? 'Resend activation email?' : 'Remove pending student?',
+        ),
+        content: Text(
+          resend
+              ? 'Send a new activation link to ${student.email}? This retries the same saved address.'
+              : 'Remove ${student.displayName} (${studentNumber}) and release the saved email and student number for a corrected roster entry? This deletes the unactivated account.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(resend ? 'Resend invitation' : 'Remove student'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _pendingStudentActions.add(student.uid));
+    try {
+      await widget.repository.managePendingStudent(
+        studentNumber,
+        resendInvitation: resend,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            resend
+                ? 'Activation email resent to ${student.email}.'
+                : 'Pending student removed. You can correct and reimport the roster row.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not ${resend ? 'resend the invitation' : 'remove the student'}: $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _pendingStudentActions.remove(student.uid));
+    }
+  }
+
   Future<void> _importRoster() async {
     setState(() => _importing = true);
     var processed = 0;
@@ -129,7 +189,8 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
           return const EmptyWorkflowState(
             icon: Icons.groups_outlined,
             title: 'Internship records unavailable',
-            message: 'Student records are unavailable right now. Please try again later.',
+            message:
+                'Student records are unavailable right now. Please try again later.',
           );
         }
         if (!snapshot.hasData) {
@@ -191,7 +252,53 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
                               'Coordinator: ${student.coordinatorName ?? 'Unassigned'}',
                             ),
                             isThreeLine: true,
-                            trailing: const Icon(Icons.chevron_right),
+                            trailing:
+                                widget.actor.role == UserRole.admin &&
+                                    student.enrollmentStatus == 'pending'
+                                ? _pendingStudentActions.contains(student.uid)
+                                      ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : PopupMenuButton<String>(
+                                          tooltip: 'Pending student actions',
+                                          onSelected: (action) =>
+                                              _managePendingStudent(
+                                                student,
+                                                action,
+                                              ),
+                                          itemBuilder: (context) => [
+                                            const PopupMenuItem(
+                                              value: 'resend',
+                                              child: ListTile(
+                                                dense: true,
+                                                leading: Icon(
+                                                  Icons
+                                                      .mark_email_read_outlined,
+                                                ),
+                                                title: Text(
+                                                  'Resend activation email',
+                                                ),
+                                              ),
+                                            ),
+                                            const PopupMenuItem(
+                                              value: 'remove',
+                                              child: ListTile(
+                                                dense: true,
+                                                leading: Icon(
+                                                  Icons.person_remove_outlined,
+                                                ),
+                                                title: Text(
+                                                  'Remove pending student',
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                : const Icon(Icons.chevron_right),
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder: (_) => Scaffold(
