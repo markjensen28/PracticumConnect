@@ -163,6 +163,120 @@ export async function provisionStudent(db, auth, row, { resend = false, deliver 
   }
 }
 
+export async function managePendingStudent(db, auth, studentNumber, action) {
+  const normalizedNumber = numberKey(studentNumber);
+  if (!normalizedNumber) throw new Error('Student number is required.');
+  if (!['resend', 'remove'].includes(action)) throw new Error('Unsupported pending student action.');
+
+  const rosterRef = db.collection('student_roster').doc(digest(normalizedNumber));
+  const initialRoster = (await rosterRef.get()).data();
+  if (!initialRoster?.uid || numberKey(initialRoster.studentNumber) !== normalizedNumber)
+    throw new Error('No roster invitation was found for that student number.');
+
+  const userRef = db.collection('users').doc(initialRoster.uid);
+  const user = (await userRef.get()).data();
+
+  if (action === 'resend') {
+    if (
+      !user ||
+      user.role !== 'student' ||
+      user.enrollmentStatus !== 'pending' ||
+      user.active === true ||
+      String(user.email || '').trim().toLowerCase() !== String(initialRoster.email || '').trim().toLowerCase()
+    )
+      throw new Error('Only a pending, unactivated student account can receive another invitation.');
+    await provisionStudent(
+      db,
+      auth,
+      {
+        uid: initialRoster.uid,
+        email: initialRoster.email,
+        studentNumber: normalizedNumber,
+        displayName: user.displayName || 'Student',
+        academics: {
+          academicYear: user.academicYear,
+          program: user.program,
+          section: user.section,
+          department: user.department,
+        },
+        rosterRef,
+      },
+      { resend: true },
+    );
+    return { resent: true };
+  }
+
+  const lease = randomBytes(16).toString('hex');
+  const emailRef = db.collection('roster_emails').doc(digest(String(initialRoster.email).trim().toLowerCase()));
+  const locked = await db.runTransaction(async (tx) => {
+    const [rosterSnapshot, userSnapshot, emailSnapshot] = await tx.getAll(rosterRef, userRef, emailRef);
+    const roster = rosterSnapshot.data();
+    const currentUser = userSnapshot.data();
+    const isPending =
+      roster?.status === 'pending' &&
+      currentUser?.role === 'student' &&
+      currentUser?.enrollmentStatus === 'pending' &&
+      currentUser?.active !== true;
+    const isInterruptedRemoval =
+      roster?.status === 'removing' &&
+      (!userSnapshot.exists ||
+        (currentUser?.role === 'student' &&
+          currentUser?.enrollmentStatus === 'pending' &&
+          currentUser?.active !== true));
+    if (
+      !roster ||
+      roster.uid !== initialRoster.uid ||
+      (!isPending && !isInterruptedRemoval) ||
+      (emailSnapshot.exists && emailSnapshot.data().uid !== initialRoster.uid)
+    )
+      throw new Error('This account is no longer pending and cannot be removed here.');
+    if (roster.leaseUntil > Date.now()) throw new Error('This invitation is being processed. Try again shortly.');
+    tx.update(rosterRef, {
+      status: 'removing',
+      lease,
+      leaseUntil: Date.now() + 600000,
+    });
+    return true;
+  });
+
+  if (!locked) return { removed: false };
+  let authDeleted = false;
+  try {
+    try {
+      await auth.deleteUser(initialRoster.uid);
+      authDeleted = true;
+    } catch (error) {
+      if (error.code !== 'auth/user-not-found') throw error;
+      authDeleted = true;
+    }
+    await db.runTransaction(async (tx) => {
+      const rosterSnapshot = await tx.get(rosterRef);
+      const roster = rosterSnapshot.data();
+      if (roster?.status !== 'removing' || roster.lease !== lease)
+        throw new Error('Removal could not be confirmed. Refresh and check the student record.');
+      tx.delete(userRef);
+      tx.delete(rosterRef);
+      tx.delete(emailRef);
+    });
+    return { removed: true };
+  } catch (error) {
+    if (!authDeleted) {
+      await db.runTransaction(async (tx) => {
+        const snapshot = await tx.get(rosterRef);
+        const roster = snapshot.data();
+        if (roster?.status === 'removing' && roster.lease === lease) {
+          tx.update(rosterRef, {
+            status: 'pending',
+            lease: FieldValue.delete(),
+            leaseUntil: FieldValue.delete(),
+          });
+        }
+      }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
 export async function activateStudent(db, auth, authorization) {
   const token = /^Bearer (\S+)$/i.exec(authorization || '')?.[1];
   let identity;
