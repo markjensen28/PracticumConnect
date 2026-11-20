@@ -39,7 +39,7 @@ class ReportExportService {
         record.studentId,
         () => _MutableReportRow(record.studentName),
       );
-      row.evaluation = record.averageRating;
+      row.evaluation = record.ratings.isEmpty ? null : record.averageRating;
     }
     final result = rows.values
         .map(

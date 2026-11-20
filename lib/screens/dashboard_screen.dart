@@ -94,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           body: LayoutBuilder(
             builder: (context, bodyConstraints) {
               final roomy = bodyConstraints.maxWidth >= 900;
-              final horizontalPadding = roomy ? 28.0 : 16.0;
+              final horizontalPadding = roomy ? 24.0 : 16.0;
               return Padding(
                 padding: EdgeInsets.fromLTRB(
                   horizontalPadding,
@@ -103,7 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   roomy ? 28 : 18,
                 ),
                 child: Align(
-                  alignment: Alignment.topCenter,
+                  alignment: Alignment.topLeft,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
                       maxWidth: AppTheme.contentMaxWidth,
@@ -113,6 +113,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         feature: _selected,
                         user: user,
                         repository: widget.controller.repository,
+                        onNavigate: (feature) =>
+                            setState(() => _selected = feature),
                       ),
                     ),
                   ),
@@ -128,7 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: 248, child: navigation),
+              SizedBox(width: 272, child: navigation),
               const VerticalDivider(width: 1, thickness: 1),
               Expanded(child: content),
             ],
@@ -439,20 +441,24 @@ class _TopBar extends StatelessWidget {
                   icon: const Icon(Icons.menu_rounded),
                 ),
               ),
-            if (!desktop) ...[const SizedBox(width: 4), const _CompactBrand()],
-            if (desktop) const Spacer(),
+            if (!desktop) ...[
+              const SizedBox(width: 4),
+              const Expanded(child: _CompactBrand()),
+            ],
             if (desktop)
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: SizedBox(
                   width: 390,
-                  height: 42,
+                  height: 46,
                   child: TextField(
                     readOnly: true,
                     showCursor: false,
+                    style: const TextStyle(fontSize: AppTheme.fontBody),
                     onTap: onSearch,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.search_rounded, size: 19),
+                      hintStyle: const TextStyle(fontSize: AppTheme.fontSmall),
                       hintText: switch (user.role) {
                         UserRole.student => 'Search requirements or documents',
                         UserRole.coordinator =>
@@ -468,7 +474,7 @@ class _TopBar extends StatelessWidget {
                   ),
                 ),
               ),
-            const Spacer(),
+            if (desktop) const Spacer(),
             if (!desktop)
               IconButton(
                 tooltip: 'Search',
@@ -500,10 +506,7 @@ class _TopBar extends StatelessWidget {
                           size: 22,
                         ),
                       ),
-                      if (snapshot.hasError ||
-                          unreadCount > 0 ||
-                          (user.role == UserRole.coordinator &&
-                              snapshot.hasData))
+                      if (snapshot.hasError || unreadCount > 0)
                         Positioned(
                           top: 3,
                           right: 1,
@@ -533,7 +536,7 @@ class _TopBar extends StatelessWidget {
                                     : '$unreadCount',
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 9,
+                                  fontSize: AppTheme.fontCaption,
                                   fontWeight: FontWeight.w700,
                                   height: 1,
                                 ),
@@ -570,7 +573,7 @@ class _TopBar extends StatelessWidget {
                 ),
               ],
               child: Container(
-                constraints: BoxConstraints(maxWidth: desktop ? 210 : 48),
+                constraints: BoxConstraints(maxWidth: desktop ? 240 : 48),
                 padding: EdgeInsets.fromLTRB(
                   desktop ? 7 : 5,
                   5,
@@ -578,8 +581,7 @@ class _TopBar extends StatelessWidget {
                   5,
                 ),
                 decoration: BoxDecoration(
-                  color: AppTheme.surfaceSoft,
-                  border: Border.all(color: AppTheme.border),
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -592,7 +594,7 @@ class _TopBar extends StatelessWidget {
                       child: Text(
                         _initials(user.displayName),
                         style: const TextStyle(
-                          fontSize: 10.5,
+                          fontSize: AppTheme.fontCaption,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -609,17 +611,17 @@ class _TopBar extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: AppTheme.fontSmall,
                                 fontWeight: FontWeight.w700,
                                 color: AppTheme.text,
                               ),
                             ),
                             Text(
-                              user.role.longLabel,
+                              user.role.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 10,
+                                fontSize: AppTheme.fontCaption,
                                 color: AppTheme.muted,
                               ),
                             ),
@@ -645,7 +647,6 @@ class _CompactBrand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Row(
-    mainAxisSize: MainAxisSize.min,
     children: [
       DecoratedBox(
         decoration: BoxDecoration(
@@ -659,12 +660,16 @@ class _CompactBrand extends StatelessWidget {
         ),
       ),
       SizedBox(width: 8),
-      Text(
-        'Practicum Connect',
-        style: TextStyle(
-          color: AppTheme.navy,
-          fontWeight: FontWeight.w800,
-          fontSize: 13,
+      Flexible(
+        child: Text(
+          'Practicum Connect',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: AppTheme.navy,
+            fontWeight: FontWeight.w800,
+            fontSize: AppTheme.fontSmall,
+          ),
         ),
       ),
     ],
@@ -688,28 +693,25 @@ class _SideNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: Colors.white,
+    color: AppTheme.navy,
     child: SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Padding(
-            padding: EdgeInsets.fromLTRB(18, 22, 16, 20),
+            padding: EdgeInsets.fromLTRB(20, 20, 16, 20),
             child: Row(
               children: [
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: AppTheme.surfaceBlue,
+                    color: Color(0xFF2C4567),
                     borderRadius: BorderRadius.all(Radius.circular(11)),
-                    border: Border.fromBorderSide(
-                      BorderSide(color: AppTheme.border),
-                    ),
                   ),
                   child: Padding(
                     padding: EdgeInsets.all(9),
                     child: Icon(
                       Icons.hub_outlined,
-                      color: AppTheme.blue,
+                      color: Colors.white,
                       size: 20,
                     ),
                   ),
@@ -722,8 +724,8 @@ class _SideNavigation extends StatelessWidget {
                       Text(
                         'Practicum Connect',
                         style: TextStyle(
-                          color: AppTheme.navy,
-                          fontSize: 15,
+                          color: Colors.white,
+                          fontSize: AppTheme.fontBody,
                           fontWeight: FontWeight.w800,
                           height: 1.1,
                         ),
@@ -733,7 +735,10 @@ class _SideNavigation extends StatelessWidget {
                         'CAS Internship Management',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: AppTheme.muted, fontSize: 9.5),
+                        style: TextStyle(
+                          color: Color(0xFFC1CCDC),
+                          fontSize: AppTheme.fontCaption,
+                        ),
                       ),
                     ],
                   ),
@@ -741,19 +746,8 @@ class _SideNavigation extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 1),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
-            child: Text(
-              'WORKSPACE',
-              style: TextStyle(
-                color: AppTheme.subtle,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.0,
-              ),
-            ),
-          ),
+          const Divider(height: 1, color: Color(0xFF3B506C)),
+          const SizedBox(height: 12),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
@@ -767,16 +761,16 @@ class _SideNavigation extends StatelessWidget {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 170),
                       curve: Curves.easeOut,
-                      constraints: const BoxConstraints(minHeight: 46),
-                      padding: const EdgeInsets.symmetric(horizontal: 11),
+                      constraints: const BoxConstraints(minHeight: 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: active
-                            ? AppTheme.surfaceBlue
+                            ? const Color(0xFF2C486D)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
-                        border: active
-                            ? Border.all(color: AppTheme.border)
-                            : Border.all(color: Colors.transparent),
                       ),
                       child: Row(
                         children: [
@@ -785,28 +779,28 @@ class _SideNavigation extends StatelessWidget {
                             height: 31,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: active
-                                  ? AppTheme.sky
-                                  : AppTheme.surfaceSoft,
+                              color: Colors.transparent,
                               borderRadius: BorderRadius.circular(9),
                             ),
                             child: Icon(
                               feature.icon,
-                              size: 17,
-                              color: active ? AppTheme.blue : AppTheme.muted,
+                              size: 21,
+                              color: active
+                                  ? Colors.white
+                                  : const Color(0xFFC1CCDC),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               feature.labelForRole(user.role),
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: active
-                                    ? AppTheme.deepBlue
-                                    : AppTheme.text,
-                                fontSize: 11.6,
+                                    ? Colors.white
+                                    : const Color(0xFFDFE6F0),
+                                fontSize: AppTheme.fontBody,
                                 fontWeight: active
                                     ? FontWeight.w700
                                     : FontWeight.w500,
@@ -817,7 +811,7 @@ class _SideNavigation extends StatelessWidget {
                             const Icon(
                               Icons.chevron_right_rounded,
                               size: 18,
-                              color: AppTheme.blue,
+                              color: Colors.white,
                             ),
                         ],
                       ),
@@ -827,7 +821,7 @@ class _SideNavigation extends StatelessWidget {
               }).toList(),
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: Color(0xFF3B506C)),
           Padding(
             padding: const EdgeInsets.all(10),
             child: Column(
@@ -844,11 +838,18 @@ class _SideNavigation extends StatelessWidget {
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                     child: Row(
                       children: [
-                        Icon(Icons.help_outline_rounded, size: 18),
+                        Icon(
+                          Icons.help_outline_rounded,
+                          size: 20,
+                          color: Color(0xFFC1CCDC),
+                        ),
                         SizedBox(width: 10),
                         Text(
                           'Help & Support',
-                          style: TextStyle(fontSize: 11.5),
+                          style: TextStyle(
+                            fontSize: AppTheme.fontSmall,
+                            color: Color(0xFFDFE6F0),
+                          ),
                         ),
                       ],
                     ),

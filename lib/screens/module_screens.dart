@@ -1,4 +1,7 @@
 import 'package:file_picker/file_picker.dart';
+import 'dart:async';
+
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +10,7 @@ import '../core/app_theme.dart';
 import '../models/app_feature.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
+import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import 'account_settings_screen.dart';
 import 'advanced_reports_screen.dart';
@@ -18,6 +22,7 @@ import 'dynamic_screens.dart';
 import 'moa_management_screen.dart';
 import 'notification_panel_screen.dart';
 import 'student_profile_screen.dart';
+import 'student_dashboard_screen.dart';
 import 'workflow_shared.dart';
 
 class ModuleRouter extends StatelessWidget {
@@ -26,8 +31,10 @@ class ModuleRouter extends StatelessWidget {
     required this.feature,
     required this.user,
     required this.repository,
+    this.onNavigate,
   });
 
+  final ValueChanged<AppFeature>? onNavigate;
   final AppFeature feature;
   final AppUser user;
   final PracticumRepository repository;
@@ -45,7 +52,11 @@ class ModuleRouter extends StatelessWidget {
     return switch (feature) {
       AppFeature.dashboard =>
         user.role == UserRole.student
-            ? OverviewScreen(user: user, repository: repository)
+            ? StudentDashboardScreen(
+                user: user,
+                repository: repository,
+                onNavigate: onNavigate,
+              )
             : CoordinatorDashboardScreen(user: user, repository: repository),
       AppFeature.statusTracker =>
         user.role == UserRole.student
@@ -102,171 +113,12 @@ class ModuleRouter extends StatelessWidget {
         studentsOnly: false,
       ),
       AppFeature.audit => AuditLogScreen(repository: repository),
-      AppFeature.settings => AccountSettingsScreen(user: user),
+      AppFeature.settings => AccountSettingsScreen(
+        user: user,
+        repository: repository,
+      ),
     };
   }
-}
-
-class OverviewScreen extends StatelessWidget {
-  const OverviewScreen({
-    super.key,
-    required this.user,
-    required this.repository,
-  });
-  final AppUser user;
-  final PracticumRepository repository;
-
-  @override
-  Widget build(BuildContext context) => ListView(
-    children: [
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(26),
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 20,
-            runSpacing: 14,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome, ${user.displayName.split(' ').first}!',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: AppTheme.navy,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${user.role.label} workspace • ${DateFormat.yMMMMd().format(DateTime.now())}',
-                  ),
-                ],
-              ),
-              Chip(
-                avatar: const Icon(Icons.verified_user_outlined, size: 18),
-                label: Text(user.role.label),
-              ),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 20),
-      StreamBuilder<List<RequirementRecord>>(
-        stream: repository.watchRequirements(user),
-        builder: (context, snapshot) {
-          final requirements = snapshot.data ?? const <RequirementRecord>[];
-          final verified = requirements
-              .where((item) => item.status == ReviewStatus.verified)
-              .length;
-          final pending = requirements
-              .where((item) => item.status == ReviewStatus.pending)
-              .length;
-          return _ResponsiveStats(
-            cards: [
-              _StatData(
-                'Requirements',
-                '${requirements.length}',
-                Icons.fact_check_outlined,
-                AppTheme.blue,
-              ),
-              _StatData(
-                'Verified',
-                '$verified',
-                Icons.verified_outlined,
-                AppTheme.success,
-              ),
-              _StatData(
-                'Pending review',
-                '$pending',
-                Icons.pending_actions_outlined,
-                AppTheme.warning,
-              ),
-              _StatData(
-                'Accessible modules',
-                '${RoleAccess.forRole(user.role).length}',
-                Icons.apps_outlined,
-                AppTheme.purple,
-              ),
-            ],
-          );
-        },
-      ),
-      const SizedBox(height: 20),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Your access',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: RoleAccess.forRole(user.role)
-                    .map(
-                      (feature) => Chip(
-                        avatar: Icon(feature.icon, size: 18),
-                        label: Text(feature.label),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 20),
-      StreamBuilder<List<NotificationRecord>>(
-        stream: repository.watchNotifications(user),
-        builder: (context, snapshot) {
-          final notices = (snapshot.data ?? const <NotificationRecord>[])
-              .where((notice) => notice.active)
-              .toList();
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Latest notices',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (notices.isEmpty)
-                    const Text('There are no notices for your account.')
-                  else
-                    ...notices
-                        .take(3)
-                        .map(
-                          (notice) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(
-                              Icons.notifications_outlined,
-                              color: AppTheme.blue,
-                            ),
-                            title: Text(notice.title),
-                            subtitle: Text(notice.message),
-                          ),
-                        ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    ],
-  );
 }
 
 class RequirementsScreen extends StatelessWidget {
@@ -406,113 +258,14 @@ class RequirementsScreen extends StatelessWidget {
   );
 
   Future<void> _showUploadDialog(BuildContext context) async {
-    final title = TextEditingController();
-    PlatformFile? selectedFile;
-    var submitting = false;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Submit a requirement'),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: title,
-                  decoration: const InputDecoration(
-                    labelText: 'Requirement title',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: submitting
-                      ? null
-                      : () async {
-                          final file = await FilePicker.pickFile(
-                            type: FileType.custom,
-                            allowedExtensions: [
-                              'pdf',
-                              'doc',
-                              'docx',
-                              'png',
-                              'jpg',
-                              'jpeg',
-                            ],
-                          );
-                          if (file != null) {
-                            setDialogState(() => selectedFile = file);
-                          }
-                        },
-                  icon: const Icon(Icons.attach_file),
-                  label: Text(selectedFile?.name ?? 'Choose file'),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Allowed: PDF, DOC, DOCX, PNG, JPG',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: submitting ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: submitting
-                  ? null
-                  : () async {
-                      if (title.text.trim().isEmpty || selectedFile == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Enter a title and choose a file.'),
-                          ),
-                        );
-                        return;
-                      }
-                      setDialogState(() => submitting = true);
-                      try {
-                        await repository.submitRequirement(
-                          user: user,
-                          title: title.text.trim(),
-                          file: selectedFile!,
-                        );
-                        if (dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
-                        }
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Requirement submitted successfully.',
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (error) {
-                        setDialogState(() => submitting = false);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(
-                            context,
-                          ).showSnackBar(SnackBar(content: Text('$error')));
-                        }
-                      }
-                    },
-              child: submitting
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Submit'),
-            ),
-          ],
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Submit a requirement')),
+          body: DocumentSubmissionBinScreen(user: user, repository: repository),
         ),
       ),
     );
-    title.dispose();
   }
 
   Future<void> _resubmit(
@@ -723,10 +476,33 @@ class RepositoryScreen extends StatelessWidget {
   );
 }
 
-class DtrScreen extends StatelessWidget {
+class DtrScreen extends StatefulWidget {
   const DtrScreen({super.key, required this.user, required this.repository});
   final AppUser user;
   final PracticumRepository repository;
+
+  @override
+  State<DtrScreen> createState() => _DtrScreenState();
+}
+
+class _DtrScreenState extends State<DtrScreen> {
+  Timer? _clockRefresh;
+  AppUser get user => widget.user;
+  PracticumRepository get repository => widget.repository;
+
+  @override
+  void initState() {
+    super.initState();
+    _clockRefresh = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockRefresh?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -736,13 +512,7 @@ class DtrScreen extends StatelessWidget {
         subtitle: user.role == UserRole.student
             ? 'Record your daily attendance, submit it for review, and monitor approved rendered hours.'
             : 'Review assigned interns\' Daily Time Records and monitor approved rendered hours.',
-        action: user.role == UserRole.student
-            ? FilledButton.icon(
-                onPressed: () => _showAddDialog(context),
-                icon: const Icon(Icons.add_alarm_outlined),
-                label: const Text('New DTR entry'),
-              )
-            : null,
+        action: null,
       ),
       const SizedBox(height: 16),
       Expanded(
@@ -754,12 +524,20 @@ class DtrScreen extends StatelessWidget {
             }
             final records = snapshot.data ?? const <DtrRecord>[];
             if (records.isEmpty) {
-              return _EmptyState(
-                icon: Icons.punch_clock_outlined,
-                title: 'No time records',
-                message: user.role == UserRole.student
-                    ? 'Create your first Daily Time Record entry.'
-                    : 'Submitted DTR entries from assigned interns will appear here.',
+              return ListView(
+                children: [
+                  if (user.role == UserRole.student) ...[
+                    _clockAction(context, records),
+                    const SizedBox(height: 16),
+                  ],
+                  _EmptyState(
+                    icon: Icons.punch_clock_outlined,
+                    title: 'No time records',
+                    message: user.role == UserRole.student
+                        ? 'Your submitted attendance records will appear here.'
+                        : 'Submitted DTR entries from assigned interns will appear here.',
+                  ),
+                ],
               );
             }
             final approved = records
@@ -781,6 +559,10 @@ class DtrScreen extends StatelessWidget {
                 .fold<double>(0, (sum, item) => sum + item.renderedHours);
             return ListView(
               children: [
+                if (user.role == UserRole.student) ...[
+                  _clockAction(context, records),
+                  const SizedBox(height: 16),
+                ],
                 _ResponsiveStats(
                   cards: [
                     _StatData(
@@ -811,8 +593,7 @@ class DtrScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Card(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
+                  child: WorkspaceTable(
                     child: DataTable(
                       columns: const [
                         DataColumn(label: Text('Student')),
@@ -837,37 +618,74 @@ class DtrScreen extends StatelessWidget {
                                   Text(DateFormat.jm().format(item.timeIn)),
                                 ),
                                 DataCell(
-                                  Text(DateFormat.jm().format(item.timeOut)),
+                                  Text(
+                                    item.timeOut == null
+                                        ? (item.isInProgress ? 'On shift' : '—')
+                                        : DateFormat.jm().format(item.timeOut!),
+                                  ),
                                 ),
-                                DataCell(Text('${item.breakMinutes} min')),
+                                DataCell(
+                                  Text(
+                                    item.attendanceState == 'in_progress' ||
+                                            item.scheduledEndAt != null
+                                        ? 'Included in shift'
+                                        : '${item.breakMinutes} min',
+                                  ),
+                                ),
                                 DataCell(
                                   Text(item.renderedHours.toStringAsFixed(2)),
                                 ),
-                                DataCell(_StatusChip(status: item.status)),
-                                DataCell(Text(item.remarks ?? '—')),
+                                DataCell(
+                                  item.isInProgress
+                                      ? const Chip(
+                                          avatar: Icon(
+                                            Icons.timelapse_outlined,
+                                            size: 17,
+                                          ),
+                                          label: Text('On shift'),
+                                        )
+                                      : _StatusChip(status: item.status),
+                                ),
+                                DataCell(
+                                  Text(
+                                    !item.isInProgress &&
+                                            item.renderedHours == 0
+                                        ? 'Review attendance data before counting hours'
+                                        : item.remarks ?? '—',
+                                  ),
+                                ),
                                 DataCell(
                                   user.role == UserRole.student
+                                      ? item.status ==
+                                                    ReviewStatus
+                                                        .needsRevision ||
+                                                item.status ==
+                                                    ReviewStatus.rejected
+                                            ? IconButton(
+                                                tooltip:
+                                                    'Reply to coordinator review',
+                                                onPressed: () =>
+                                                    _showDtrResponseDialog(
+                                                      context,
+                                                      item,
+                                                    ),
+                                                icon: const Icon(
+                                                  Icons.reply_outlined,
+                                                ),
+                                              )
+                                            : const SizedBox.shrink()
+                                      : item.isInProgress
                                       ? IconButton(
                                           tooltip:
-                                              item.status ==
-                                                      ReviewStatus
-                                                          .needsRevision ||
-                                                  item.status ==
-                                                      ReviewStatus.rejected
-                                              ? 'Correct and resubmit'
-                                              : 'Awaiting coordinator review',
-                                          onPressed:
-                                              item.status ==
-                                                      ReviewStatus
-                                                          .needsRevision ||
-                                                  item.status ==
-                                                      ReviewStatus.rejected
-                                              ? () => _showAddDialog(
-                                                  context,
-                                                  record: item,
-                                                )
-                                              : null,
-                                          icon: const Icon(Icons.edit_outlined),
+                                              'Resolve this open shift with a reason',
+                                          onPressed: () =>
+                                              _showEarlyCloseDialog(
+                                                context,
+                                                item,
+                                              ),
+                                          icon: const Icon(
+                                            Icons.logout_outlined,
+                                          ),
                                         )
                                       : IconButton(
                                           tooltip: 'Review time record',
@@ -893,169 +711,323 @@ class DtrScreen extends StatelessWidget {
     ],
   );
 
-  Future<void> _showAddDialog(BuildContext context, {DtrRecord? record}) async {
-    if (user.role != UserRole.student) return;
-
-    final breakMinutes = TextEditingController(
-      text: '${record?.breakMinutes ?? 60}',
-    );
-    var selectedDate = record?.date ?? DateTime.now();
-    var timeIn = record == null
-        ? const TimeOfDay(hour: 8, minute: 0)
-        : TimeOfDay.fromDateTime(record.timeIn);
-    var timeOut = record == null
-        ? const TimeOfDay(hour: 17, minute: 0)
-        : TimeOfDay.fromDateTime(record.timeOut);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(
-            record == null
-                ? 'New Daily Time Record'
-                : 'Correct Daily Time Record',
-          ),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.person_outline),
-                  ),
-                  title: Text(user.displayName),
-                  subtitle: Text(user.studentNumber ?? user.email),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final value = await showDatePicker(
-                      context: context,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2100),
-                      initialDate: selectedDate,
-                    );
-                    if (value != null) {
-                      setDialogState(() => selectedDate = value);
-                    }
-                  },
-                  icon: const Icon(Icons.calendar_today_outlined),
-                  label: Text(DateFormat.yMMMd().format(selectedDate)),
-                ),
-                const SizedBox(height: 12),
-                Row(
+  Widget _clockAction(BuildContext context, List<DtrRecord> records) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayKey = DateFormat('yyyy-MM-dd').format(now);
+    final todayRecord = records.where((record) {
+      if (record.workDate != null) return record.workDate == todayKey;
+      final date = record.date.toLocal();
+      return DateTime(date.year, date.month, date.day) == today;
+    }).firstOrNull;
+    final active = records.where((record) => record.isInProgress).firstOrNull;
+    if (active != null) {
+      final end = active.scheduledEndAt;
+      final missedDay = active.workDate != null && active.workDate != todayKey;
+      final canSignOut =
+          !missedDay &&
+          end != null &&
+          !DateTime.now().toUtc().isBefore(end.toUtc());
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              const Icon(Icons.timer_outlined, color: AppTheme.blue, size: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final value = await showTimePicker(
-                            context: context,
-                            initialTime: timeIn,
-                          );
-                          if (value != null) {
-                            setDialogState(() => timeIn = value);
-                          }
-                        },
-                        icon: const Icon(Icons.login),
-                        label: Text('In: ${timeIn.format(context)}'),
-                      ),
+                    const Text(
+                      'Shift in progress',
+                      style: TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final value = await showTimePicker(
-                            context: context,
-                            initialTime: timeOut,
-                          );
-                          if (value != null) {
-                            setDialogState(() => timeOut = value);
-                          }
-                        },
-                        icon: const Icon(Icons.logout),
-                        label: Text('Out: ${timeOut.format(context)}'),
-                      ),
+                    Text(
+                      missedDay
+                          ? 'This shift missed its scheduled Sign Out date. Ask your coordinator to resolve it.'
+                          : end == null
+                          ? 'Sign Out time unavailable'
+                          : canSignOut
+                          ? 'Scheduled shift has ended. You can Sign Out now.'
+                          : 'Sign Out opens at ${DateFormat.jm().format(end.toLocal())}. Break time is included in the shift.',
+                      style: const TextStyle(color: AppTheme.muted),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: breakMinutes,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Break minutes',
-                    helperText:
-                        'Rendered hours are calculated automatically after subtracting the break.',
+              ),
+              FilledButton.icon(
+                onPressed: canSignOut ? () => _clockOut(context) : null,
+                icon: const Icon(Icons.logout_outlined),
+                label: const Text('Sign Out'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (todayRecord != null) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(
+            Icons.check_circle_outline,
+            color: AppTheme.success,
+          ),
+          title: const Text('Today’s DTR record'),
+          subtitle: Text(
+            todayRecord.status == ReviewStatus.needsRevision ||
+                    todayRecord.status == ReviewStatus.rejected
+                ? 'Your coordinator returned it. Reply below; the recorded times stay unchanged.'
+                : todayRecord.status == ReviewStatus.verified
+                ? 'Your attendance was approved.'
+                : 'Your attendance is waiting for coordinator review.',
+          ),
+        ),
+      );
+    }
+    return StreamBuilder<InternshipProfileRecord?>(
+      stream: repository.watchInternshipProfile(user.uid),
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final scheduleReady =
+            profile?.shiftStartMinutes != null &&
+            profile?.shiftEndMinutes != null &&
+            profile!.shiftStartMinutes! < profile.shiftEndMinutes! &&
+            profile.workDays.isNotEmpty;
+        final message = snapshot.hasError
+            ? 'Internship shift details are unavailable.'
+            : scheduleReady
+            ? 'Sign In uses server time and a check-in photo. Breaks are included in the shift.'
+            : 'Ask your coordinator to enter your company shift in Internship Details.';
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppTheme.blue,
+                  size: 28,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        scheduleReady
+                            ? 'Ready to start your shift?'
+                            : 'Shift schedule needed',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        message,
+                        style: const TextStyle(color: AppTheme.muted),
+                      ),
+                    ],
                   ),
+                ),
+                FilledButton.icon(
+                  onPressed: scheduleReady ? () => _clockIn(context) : null,
+                  icon: const Icon(Icons.login_outlined),
+                  label: const Text('Sign In'),
                 ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                final start = DateTime(
-                  selectedDate.year,
-                  selectedDate.month,
-                  selectedDate.day,
-                  timeIn.hour,
-                  timeIn.minute,
-                );
-                final end = DateTime(
-                  selectedDate.year,
-                  selectedDate.month,
-                  selectedDate.day,
-                  timeOut.hour,
-                  timeOut.minute,
-                );
-                try {
-                  if (record == null) {
-                    await repository.addDtrEntry(
-                      actor: user,
-                      studentId: user.uid,
-                      studentName: user.displayName,
-                      date: selectedDate,
-                      timeIn: start,
-                      timeOut: end,
-                      breakMinutes: int.tryParse(breakMinutes.text) ?? 0,
-                    );
-                  } else {
-                    await repository.updateDtrEntry(
-                      student: user,
-                      record: record,
-                      date: selectedDate,
-                      timeIn: start,
-                      timeOut: end,
-                      breakMinutes: int.tryParse(breakMinutes.text) ?? 0,
-                    );
-                  }
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext);
-                  }
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('$error')));
-                  }
-                }
-              },
-              icon: const Icon(Icons.send_outlined),
-              label: Text(
-                record == null ? 'Submit DTR' : 'Resubmit correction',
-              ),
-            ),
-          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _clockIn(BuildContext context) async {
+    final photo = await showDialog<Uint8List>(
+      context: context,
+      builder: (_) => const _DtrCheckInCameraDialog(),
+    );
+    if (photo == null || !context.mounted) return;
+    try {
+      await repository.clockIn(student: user, photoBytes: photo);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Signed in. Your check-in photo and server time were recorded.',
+          ),
         ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
+  Future<void> _clockOut(BuildContext context) async {
+    try {
+      await repository.clockOut(student: user);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Signed out. Your DTR was sent to your coordinator for review.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
+  Future<void> _showEarlyCloseDialog(
+    BuildContext context,
+    DtrRecord item,
+  ) async {
+    final actualTime = TextEditingController();
+    final reason = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Resolve ${item.studentName}’s open shift?'),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: actualTime,
+                decoration: const InputDecoration(
+                  labelText: 'Actual sign-out (HH:mm, placement time)',
+                  helperText:
+                      'Required for a missed sign-out on a previous day.',
+                ),
+              ),
+              TextField(
+                controller: reason,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: 'Reason for resolving the open shift',
+                  helperText: 'Explain how the sign-out time was established.',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await repository.closeShiftEarly(
+                  coordinator: user,
+                  record: item,
+                  reason: reason.text,
+                  actualTime: actualTime.text,
+                );
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Shift closed and sent for DTR review.'),
+                    ),
+                  );
+                }
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(
+                    dialogContext,
+                  ).showSnackBar(SnackBar(content: Text('$error')));
+                }
+              }
+            },
+            child: const Text('Resolve shift'),
+          ),
+        ],
       ),
     );
-    breakMinutes.dispose();
+    actualTime.dispose();
+    reason.dispose();
+  }
+
+  Future<void> _showDtrResponseDialog(
+    BuildContext context,
+    DtrRecord item,
+  ) async {
+    final response = TextEditingController(text: item.studentResponse ?? '');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reply to DTR review'),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Coordinator note: ${item.remarks ?? 'No review note provided.'}',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: response,
+                minLines: 3,
+                maxLines: 5,
+                maxLength: 1200,
+                decoration: const InputDecoration(
+                  labelText: 'Your response',
+                  helperText: 'Attendance timestamps remain unchanged.',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await repository.submitDtrResponse(
+                  student: user,
+                  record: item,
+                  response: response.text,
+                );
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Your response was sent to your coordinator.',
+                      ),
+                    ),
+                  );
+                }
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(
+                    dialogContext,
+                  ).showSnackBar(SnackBar(content: Text('$error')));
+                }
+              }
+            },
+            child: const Text('Send response'),
+          ),
+        ],
+      ),
+    );
+    response.dispose();
   }
 
   Future<void> _showReviewDialog(BuildContext context, DtrRecord item) async {
@@ -1071,6 +1043,46 @@ class DtrScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (item.checkInPhotoPath != null) ...[
+                  FutureBuilder<String?>(
+                    future: repository.signedDtrPhotoUrl(
+                      item.checkInPhotoPath!,
+                    ),
+                    builder: (context, snapshot) => snapshot.data == null
+                        ? const ListTile(
+                            leading: Icon(Icons.photo_outlined),
+                            title: Text('Check-in photo unavailable'),
+                          )
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              snapshot.data!,
+                              height: 220,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Text(
+                  'Time In: ${DateFormat.yMMMd().add_jm().format(item.timeIn)}',
+                ),
+                Text(
+                  'Time Out: ${item.timeOut == null ? 'Open shift' : DateFormat.yMMMd().add_jm().format(item.timeOut!)}',
+                ),
+                if (item.exceptionReason != null)
+                  Text('Coordinator exception: ${item.exceptionReason}'),
+                if (item.studentResponse != null &&
+                    item.studentResponse!.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Student response: ${item.studentResponse}'),
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 DropdownButtonFormField<ReviewStatus>(
                   isExpanded: true,
                   initialValue: status,
@@ -1123,6 +1135,150 @@ class DtrScreen extends StatelessWidget {
   }
 }
 
+class _DtrCheckInCameraDialog extends StatefulWidget {
+  const _DtrCheckInCameraDialog();
+
+  @override
+  State<_DtrCheckInCameraDialog> createState() =>
+      _DtrCheckInCameraDialogState();
+}
+
+class _DtrCheckInCameraDialogState extends State<_DtrCheckInCameraDialog> {
+  CameraController? _controller;
+  Uint8List? _captured;
+  String? _error;
+  bool _loading = true;
+  bool _capturing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        throw StateError('No camera was found on this device.');
+      }
+      final camera = cameras.firstWhere(
+        (item) => item.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(
+        camera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+        _loading = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = error.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _capture() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized || _capturing) {
+      return;
+    }
+    setState(() => _capturing = true);
+    try {
+      final file = await controller.takePicture();
+      final bytes = await file.readAsBytes();
+      if (mounted) setState(() => _captured = bytes);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(_captured == null ? 'Check-in photo' : 'Review photo'),
+    content: SizedBox(
+      width: 520,
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: _captured != null
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(_captured!, fit: BoxFit.cover),
+              )
+            : _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _controller != null
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CameraPreview(_controller!),
+              )
+            : Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.no_photography_outlined, size: 42),
+                    const SizedBox(height: 12),
+                    Text(
+                      _error ?? 'Camera unavailable.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Allow camera access in your browser or device settings before signing in.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      if (_captured != null)
+        OutlinedButton.icon(
+          onPressed: () => setState(() => _captured = null),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Retake'),
+        ),
+      if (_captured == null && _controller != null)
+        FilledButton.icon(
+          onPressed: _capturing ? null : _capture,
+          icon: const Icon(Icons.camera_alt_outlined),
+          label: Text(_capturing ? 'Capturing…' : 'Capture'),
+        ),
+      if (_captured != null)
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, _captured),
+          icon: const Icon(Icons.check),
+          label: const Text('Use photo and Sign In'),
+        ),
+    ],
+  );
+}
+
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({
     super.key,
@@ -1142,7 +1298,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NotificationRecord>>(
-    stream: widget.repository.watchNotifications(widget.user),
+    stream: widget.repository.watchNotificationManagement(widget.user),
     builder: (context, snapshot) {
       if (snapshot.hasError) {
         return _ErrorState(error: snapshot.error!);
@@ -1297,7 +1453,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                         'Read by ${item.readBy.length}',
                                         style: const TextStyle(
                                           color: AppTheme.muted,
-                                          fontSize: 11,
+                                          fontSize: AppTheme.fontSmall,
                                         ),
                                       ),
                                     ],
@@ -1628,7 +1784,7 @@ class _ModuleHeader extends StatelessWidget {
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 color: AppTheme.navy,
                 fontWeight: FontWeight.w800,
-                fontSize: compact ? 20 : 23,
+                fontSize: compact ? 24 : 28,
               ),
             ),
             const SizedBox(height: 5),
@@ -1636,14 +1792,16 @@ class _ModuleHeader extends StatelessWidget {
               subtitle,
               style: const TextStyle(
                 color: AppTheme.muted,
-                fontSize: 12.5,
+                fontSize: AppTheme.fontSmall,
                 height: 1.35,
               ),
             ),
           ],
         ),
       );
-      if (action == null) return heading;
+      if (action == null) {
+        return Align(alignment: Alignment.centerLeft, child: heading);
+      }
       if (compact) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1731,7 +1889,10 @@ class _StatCard extends StatelessWidget {
                   data.label,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
                 ),
               ],
             ),
@@ -1747,21 +1908,7 @@ class _StatusChip extends StatelessWidget {
   final ReviewStatus status;
 
   @override
-  Widget build(BuildContext context) {
-    final (color, icon) = switch (status) {
-      ReviewStatus.verified => (AppTheme.success, Icons.check_circle_outline),
-      ReviewStatus.needsRevision => (AppTheme.danger, Icons.edit_note_outlined),
-      ReviewStatus.rejected => (AppTheme.danger, Icons.cancel_outlined),
-      ReviewStatus.underReview => (AppTheme.purple, Icons.rate_review_outlined),
-      ReviewStatus.pending => (AppTheme.warning, Icons.pending_outlined),
-    };
-    return Chip(
-      avatar: Icon(icon, size: 17, color: color),
-      label: Text(status.label),
-      backgroundColor: color.withValues(alpha: 0.10),
-      side: BorderSide(color: color.withValues(alpha: 0.25)),
-    );
-  }
+  Widget build(BuildContext context) => StatusBadge(status.label);
 }
 
 class _EmptyState extends StatelessWidget {

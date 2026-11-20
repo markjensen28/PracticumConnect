@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
+import '../models/requirement_compliance.dart';
 import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import 'document_workflow_screens.dart';
@@ -195,7 +196,9 @@ class _CoordinatorDashboardScreenState
                       final selected =
                           _selectedStudent != null &&
                               selectedStudentIds.contains(_selectedStudent!.uid)
-                          ? _selectedStudent
+                          ? students.firstWhere(
+                              (student) => student.uid == _selectedStudent!.uid,
+                            )
                           : (students.isEmpty ? null : students.first);
                       final selectedProfile = selected == null
                           ? null
@@ -303,15 +306,16 @@ class _CoordinatorDashboardScreenState
                                                 ),
                                               ),
                                               body: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(18),
+                                                padding: const EdgeInsets.all(
+                                                  18,
+                                                ),
                                                 child:
                                                     StudentInternshipProfileScreen(
-                                                  actor: widget.user,
-                                                  student: selectedStudent,
-                                                  repository:
-                                                      widget.repository,
-                                                ),
+                                                      actor: widget.user,
+                                                      student: selectedStudent,
+                                                      repository:
+                                                          widget.repository,
+                                                    ),
                                               ),
                                             ),
                                           ),
@@ -356,6 +360,7 @@ class _CoordinatorDashboardScreenState
                                   ],
                                 );
                                 final right = _StudentSummary(
+                                  repository: widget.repository,
                                   student: selected,
                                   requirements: requirements,
                                   profile: selectedProfile,
@@ -400,11 +405,17 @@ class _CoordinatorDashboardScreenState
                                 return Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(flex: 5, child: left),
-                                    const SizedBox(width: 10),
-                                    Expanded(flex: 4, child: middle),
-                                    const SizedBox(width: 10),
-                                    SizedBox(width: 260, child: right),
+                                    Expanded(
+                                      child: Column(
+                                        children: [
+                                          left,
+                                          const SizedBox(height: 20),
+                                          middle,
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+                                    SizedBox(width: 360, child: right),
                                   ],
                                 );
                               },
@@ -498,7 +509,7 @@ class _DashboardStats extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 1120
-            ? 5
+            ? cards.length
             : constraints.maxWidth >= 780
             ? 3
             : constraints.maxWidth >= 520
@@ -545,7 +556,7 @@ class _RecentSubmissions extends StatelessWidget {
           : Column(
               children: [
                 Container(
-                  height: 31,
+                  height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   color: AppTheme.surfaceSoft,
                   child: const Row(
@@ -557,7 +568,7 @@ class _RecentSubmissions extends StatelessWidget {
                       ),
                       Expanded(flex: 2, child: Text('Submitted', style: _head)),
                       Expanded(flex: 2, child: Text('Status', style: _head)),
-                      SizedBox(width: 44, child: Text('Action', style: _head)),
+                      SizedBox(width: 64, child: Text('Action', style: _head)),
                     ],
                   ),
                 ),
@@ -581,7 +592,7 @@ class _RecentSubmissions extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 9.5,
+                                fontSize: AppTheme.fontCaption,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -604,12 +615,14 @@ class _RecentSubmissions extends StatelessWidget {
                             ),
                           ),
                           SizedBox(
-                            width: 44,
+                            width: 64,
                             child: TextButton(
                               onPressed: () => onView(record),
                               child: const Text(
                                 'View',
-                                style: TextStyle(fontSize: 8.5),
+                                style: TextStyle(
+                                  fontSize: AppTheme.fontCaption,
+                                ),
                               ),
                             ),
                           ),
@@ -624,7 +637,7 @@ class _RecentSubmissions extends StatelessWidget {
   }
 
   static const TextStyle _head = TextStyle(
-    fontSize: 8.4,
+    fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
   );
@@ -633,7 +646,7 @@ class _RecentSubmissions extends StatelessWidget {
     value,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
-    style: const TextStyle(fontSize: 9),
+    style: const TextStyle(fontSize: AppTheme.fontCaption),
   );
 }
 
@@ -659,7 +672,10 @@ class _NeedsAttention extends StatelessWidget {
       child: records.isEmpty
           ? const Text(
               'No urgent requirements.',
-              style: TextStyle(fontSize: 10, color: AppTheme.muted),
+              style: TextStyle(
+                fontSize: AppTheme.fontCaption,
+                color: AppTheme.muted,
+              ),
             )
           : Column(
               children: records
@@ -677,7 +693,9 @@ class _NeedsAttention extends StatelessWidget {
                               record.studentName.isEmpty
                                   ? '?'
                                   : record.studentName[0],
-                              style: const TextStyle(fontSize: 8),
+                              style: const TextStyle(
+                                fontSize: AppTheme.fontCaption,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 7),
@@ -691,7 +709,7 @@ class _NeedsAttention extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 9.5,
+                                    fontSize: AppTheme.fontCaption,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -700,7 +718,7 @@ class _NeedsAttention extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 8.5,
+                                    fontSize: AppTheme.fontCaption,
                                     color: AppTheme.muted,
                                   ),
                                 ),
@@ -710,7 +728,7 @@ class _NeedsAttention extends StatelessWidget {
                           Text(
                             shortDate(record.dueDate),
                             style: const TextStyle(
-                              fontSize: 8.5,
+                              fontSize: AppTheme.fontCaption,
                               color: AppTheme.danger,
                             ),
                           ),
@@ -742,7 +760,7 @@ class _PartnerStatus extends StatelessWidget {
         : Column(
             children: [
               Container(
-                height: 31,
+                height: 44,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 color: AppTheme.surfaceSoft,
                 child: const Row(
@@ -774,7 +792,7 @@ class _PartnerStatus extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 9.2,
+                                fontSize: AppTheme.fontCaption,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -793,7 +811,7 @@ class _PartnerStatus extends StatelessWidget {
                                   ? 'Expired'
                                   : '${record.daysUntilExpiry} days',
                               style: const TextStyle(
-                                fontSize: 8.8,
+                                fontSize: AppTheme.fontCaption,
                                 color: AppTheme.muted,
                               ),
                             ),
@@ -802,7 +820,9 @@ class _PartnerStatus extends StatelessWidget {
                             flex: 2,
                             child: Text(
                               shortDate(record.endDate),
-                              style: const TextStyle(fontSize: 8.8),
+                              style: const TextStyle(
+                                fontSize: AppTheme.fontCaption,
+                              ),
                             ),
                           ),
                         ],
@@ -814,7 +834,7 @@ class _PartnerStatus extends StatelessWidget {
   );
 
   static const TextStyle _head = TextStyle(
-    fontSize: 8.4,
+    fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
   );
@@ -843,7 +863,10 @@ class _DashboardActivity extends StatelessWidget {
         if (records.isEmpty) {
           return const Text(
             'No recent activity.',
-            style: TextStyle(fontSize: 10, color: AppTheme.muted),
+            style: TextStyle(
+              fontSize: AppTheme.fontCaption,
+              color: AppTheme.muted,
+            ),
           );
         }
         return Column(
@@ -877,14 +900,14 @@ class _DashboardActivity extends StatelessWidget {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 9.2,
+                                fontSize: AppTheme.fontCaption,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             Text(
                               '${record.userName} • ${DateFormat.MMMd().format(record.createdAt)}',
                               style: const TextStyle(
-                                fontSize: 8.2,
+                                fontSize: AppTheme.fontCaption,
                                 color: AppTheme.muted,
                               ),
                             ),
@@ -925,7 +948,10 @@ class _InternshipDistribution extends StatelessWidget {
       child: profiles.isEmpty
           ? const Text(
               'No internship profiles configured.',
-              style: TextStyle(fontSize: 10, color: AppTheme.muted),
+              style: TextStyle(
+                fontSize: AppTheme.fontCaption,
+                color: AppTheme.muted,
+              ),
             )
           : Row(
               children: [
@@ -954,7 +980,7 @@ class _InternshipDistribution extends StatelessWidget {
                           const Text(
                             'Total Interns',
                             style: TextStyle(
-                              fontSize: 8.2,
+                              fontSize: AppTheme.fontCaption,
                               color: AppTheme.muted,
                             ),
                           ),
@@ -989,13 +1015,15 @@ class _InternshipDistribution extends StatelessWidget {
                                 entry.key,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 8.8),
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontCaption,
+                                ),
                               ),
                             ),
                             Text(
                               '${entry.value} ($percent%)',
                               style: const TextStyle(
-                                fontSize: 8.4,
+                                fontSize: AppTheme.fontCaption,
                                 color: AppTheme.muted,
                               ),
                             ),
@@ -1045,6 +1073,7 @@ class _DonutPainter extends CustomPainter {
 
 class _StudentSummary extends StatefulWidget {
   const _StudentSummary({
+    required this.repository,
     required this.student,
     required this.requirements,
     required this.profile,
@@ -1052,6 +1081,7 @@ class _StudentSummary extends StatefulWidget {
     required this.onOpen,
   });
 
+  final PracticumRepository repository;
   final AppUser? student;
   final List<RequirementRecord> requirements;
   final InternshipProfileRecord? profile;
@@ -1085,10 +1115,6 @@ class _StudentSummaryState extends State<_StudentSummary> {
     final documents = widget.requirements
         .where((record) => record.studentId == student.uid)
         .toList();
-    final verified = documents
-        .where((record) => record.status == ReviewStatus.verified)
-        .length;
-    final progress = documents.isEmpty ? 0.0 : verified / documents.length;
     final hours = widget.dtr
         .where(
           (item) =>
@@ -1105,7 +1131,10 @@ class _StudentSummaryState extends State<_StudentSummary> {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   'No document submissions are available for this student.',
-                  style: TextStyle(fontSize: 9.5, color: AppTheme.muted),
+                  style: TextStyle(
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.muted,
+                  ),
                 ),
               )
             : Column(
@@ -1131,7 +1160,9 @@ class _StudentSummaryState extends State<_StudentSummary> {
                                 record.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 9.2),
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontCaption,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -1157,7 +1188,7 @@ class _StudentSummaryState extends State<_StudentSummary> {
               child: const Text(
                 'Evaluation ratings and comments are handled in the authorized student profile and evaluation workflow.',
                 style: TextStyle(
-                  fontSize: 9.5,
+                  fontSize: AppTheme.fontCaption,
                   color: AppTheme.muted,
                   height: 1.35,
                 ),
@@ -1178,7 +1209,10 @@ class _StudentSummaryState extends State<_StudentSummary> {
           children: [
             const Text(
               'Internship Details',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: AppTheme.fontCaption,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 4),
             InfoRow(
@@ -1211,41 +1245,48 @@ class _StudentSummaryState extends State<_StudentSummary> {
               labelWidth: 74,
             ),
             const Divider(height: 18),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Requirement Progress',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Text(
-                  '$verified of ${documents.length} verified',
-                  style: const TextStyle(fontSize: 8.5, color: AppTheme.muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 6,
-                backgroundColor: AppTheme.border,
-              ),
+            StreamBuilder<List<RequirementDefinition>>(
+              stream: widget.repository.watchRequirementDefinitions(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Text('Unable to load requirement assignments.');
+                }
+                if (!snapshot.hasData) return const LinearProgressIndicator();
+                final compliance = RequirementCompliance.forStudent(
+                  student,
+                  snapshot.data!,
+                  documents,
+                );
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Verified requirements ? ${compliance.label}'),
+                    if (compliance.hasYear && compliance.assigned > 0) ...[
+                      const SizedBox(height: 6),
+                      LinearProgressIndicator(
+                        value: compliance.verified / compliance.assigned,
+                        minHeight: 6,
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 9),
             const Text(
               'Hours Rendered',
-              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: AppTheme.fontCaption,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               '${hours.toStringAsFixed(1)} / ${widget.profile?.requiredHours ?? 400} hours',
-              style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
+              style: const TextStyle(
+                fontSize: AppTheme.fontCaption,
+                color: AppTheme.muted,
+              ),
             ),
           ],
         );
@@ -1264,7 +1305,7 @@ class _StudentSummaryState extends State<_StudentSummary> {
                 foregroundColor: AppTheme.deepBlue,
                 child: Text(
                   student.displayName.isEmpty ? '?' : student.displayName[0],
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: AppTheme.fontSmall),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1277,14 +1318,14 @@ class _StudentSummaryState extends State<_StudentSummary> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 10.5,
+                        fontSize: AppTheme.fontCaption,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     Text(
                       student.studentNumber ?? '',
                       style: const TextStyle(
-                        fontSize: 8.5,
+                        fontSize: AppTheme.fontCaption,
                         color: AppTheme.muted,
                       ),
                     ),

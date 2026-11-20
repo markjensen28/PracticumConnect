@@ -20,3 +20,5 @@ config/*.json
 node_modules/
 .vercel/
 firestore-debug.log
+/roster_*.json
+/tmp/

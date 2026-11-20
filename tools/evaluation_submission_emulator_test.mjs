@@ -3,24 +3,14 @@ import { randomBytes } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
-// Verify that the LOCAL emulator is running before initializing Firebase.
-const hubResponse = await fetch('http://127.0.0.1:4400/emulators');
-if (!hubResponse.ok) {
-  throw new Error('Local emulator hub is unavailable. No test data was written.');
-}
-
-const emulators = await hubResponse.json();
-if (emulators.firestore?.port !== 8080) {
-  throw new Error('Expected local Firestore emulator on port 8080.');
-}
-
-// Force this test process to use the demo project and local emulator.
+// All writes below target a loopback Firestore emulator and a demo project.
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
 process.env.FIREBASE_PROJECT_ID = 'demo-practicum-connect';
 
 initializeApp({ projectId: 'demo-practicum-connect' });
 
 const { submitPublicEvaluation } = await import('./evaluation_core.mjs');
+const { mailboxProof } = await import('./evaluation_test_mailbox.mjs');
 const db = getFirestore();
 
 const token1 = randomBytes(24).toString('base64url');
@@ -70,8 +60,16 @@ try {
     }),
   ]);
 
-  const result = await submitPublicEvaluation({ body });
-  assert.equal(result.status, 200, JSON.stringify(result.payload));
+  assert.equal((await submitPublicEvaluation({body})).status,403);
+  body.proof = await mailboxProof(body.token,email);
+  assert.equal((await submitPublicEvaluation({body:{...body,token:token2}})).status,403);
+  const mailbox = db.collection('evaluation_mailboxes').doc(token1);
+  await mailbox.update({proofUntil:Date.now()-1});
+  assert.equal((await submitPublicEvaluation({body})).status,403);
+  await mailbox.update({proofUntil:Date.now()+60000});
+  const concurrent = await Promise.all([submitPublicEvaluation({body}), submitPublicEvaluation({body})]);
+  assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);
+  assert.equal((await mailbox.get()).exists,false);
 
   const [submittedEvaluation, submittedStatus, pendingEvaluation, pendingStatus] =
     await Promise.all([

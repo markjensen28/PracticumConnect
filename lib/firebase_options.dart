@@ -11,14 +11,13 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyComIkIAq82g1WmjKhOZYoNFuXT_Bqf6Xs',
-    appId: '1:177144288884:web:2f6af2d3e029a2c4072321',
-    messagingSenderId: '177144288884',
-    projectId: 'integratedschoolmanageme-8a7ef',
-    authDomain: 'integratedschoolmanageme-8a7ef.firebaseapp.com',
-    databaseURL:
-        'https://integratedschoolmanageme-8a7ef-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'integratedschoolmanageme-8a7ef.firebasestorage.app',
-    measurementId: 'G-ZVY3NDECEP',
+    apiKey: 'AIzaSyBlGfzBKyXT1RQbODqBA4lj78XbQaBBBfI',
+    appId: '1:175291814599:web:401133592c6ac37f3964e2',
+    messagingSenderId: '175291814599',
+    projectId: 'practicumconnect-aa5d1',
+    authDomain: 'practicumconnect-aa5d1.firebaseapp.com',
+    databaseURL: 'https://practicumconnect-aa5d1-default-rtdb.firebaseio.com',
+    storageBucket: 'practicumconnect-aa5d1.firebasestorage.app',
+    measurementId: 'G-ELFDF8YK20',
   );
 }

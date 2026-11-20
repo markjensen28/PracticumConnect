@@ -15,8 +15,8 @@ const args = Object.fromEntries(
 
 const email = args.email?.trim();
 const role = args.role?.trim()?.toLowerCase();
-if (!email || !['admin', 'coordinator', 'student'].includes(role)) {
-  console.error('Usage: node set_user_claims.mjs --email=user@example.com --role=admin|coordinator|student');
+if (!email || !['admin', 'coordinator'].includes(role)) {
+  console.error('Usage: node set_user_claims.mjs --email=user@example.com --role=admin|coordinator');
   process.exit(1);
 }
 

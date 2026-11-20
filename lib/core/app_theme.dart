@@ -1,40 +1,45 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Soft brand palette
-  static const navy = Color(0xFF25364A);
-  static const blue = Color(0xFF5B7CF6);
-  static const deepBlue = Color(0xFF4667D8);
+  // Shared workspace palette
+  static const navy = Color(0xFF1C304A);
+  static const blue = Color(0xFF315BCB);
+  static const deepBlue = Color(0xFF2449AC);
   static const sky = Color(0xFFEEF3FF);
 
   // Light surfaces
-  static const background = Color(0xFFF7F9FC);
+  static const background = Color(0xFFF2F5F9);
   static const surface = Colors.white;
-  static const surfaceSoft = Color(0xFFF9FAFB);
-  static const surfaceBlue = Color(0xFFF2F6FF);
-  static const border = Color(0xFFE7EBF1);
-  static const borderStrong = Color(0xFFD7DDE7);
+  static const surfaceSoft = Color(0xFFF7F9FC);
+  static const surfaceBlue = Color(0xFFEDF2FF);
+  static const border = Color(0xFFDCE3ED);
+  static const borderStrong = Color(0xFFBBC8DA);
 
   // Text
-  static const text = Color(0xFF263238);
-  static const muted = Color(0xFF667085);
-  static const subtle = Color(0xFF98A2B3);
+  static const text = Color(0xFF202F43);
+  static const muted = Color(0xFF526176);
+  static const subtle = Color(0xFF617086);
 
   // States
-  static const success = Color(0xFF2E9D69);
-  static const warning = Color(0xFFD4932F);
-  static const danger = Color(0xFFD86666);
-  static const purple = Color(0xFF8174C9);
+  static const success = Color(0xFF18734D);
+  static const warning = Color(0xFF925D0B);
+  static const danger = Color(0xFFB53F47);
+  static const purple = Color(0xFF6950A1);
 
-  static const double contentMaxWidth = 1320;
-  static const double cardRadius = 14;
-  static const double controlRadius = 11;
+  static const double contentMaxWidth = 1600;
+  static const double cardRadius = 12;
+  static const double controlRadius = 8;
+
+  static const double fontCaption = 13;
+  static const double fontSmall = 14;
+  static const double fontBody = 15;
 
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(
       seedColor: blue,
       brightness: Brightness.light,
       primary: blue,
+      onPrimary: Colors.white,
       secondary: const Color(0xFF75A7E8),
       surface: surface,
       error: danger,
@@ -68,29 +73,40 @@ class AppTheme {
         ),
         headlineSmall: const TextStyle(
           color: navy,
-          fontSize: 23,
+          fontSize: 28,
           fontWeight: FontWeight.w800,
           letterSpacing: -0.3,
         ),
         titleLarge: const TextStyle(
           color: text,
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.w700,
         ),
         titleMedium: const TextStyle(
           color: text,
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
         ),
         titleSmall: const TextStyle(
           color: text,
-          fontSize: 13.5,
+          fontSize: fontBody,
           fontWeight: FontWeight.w700,
         ),
-        bodyLarge: const TextStyle(color: text, fontSize: 14.5, height: 1.45),
-        bodyMedium: const TextStyle(color: text, fontSize: 13, height: 1.4),
-        bodySmall: const TextStyle(color: muted, fontSize: 11.8, height: 1.35),
-        labelLarge: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        bodyLarge: const TextStyle(color: text, fontSize: 16, height: 1.45),
+        bodyMedium: const TextStyle(
+          color: text,
+          fontSize: fontBody,
+          height: 1.5,
+        ),
+        bodySmall: const TextStyle(
+          color: muted,
+          fontSize: fontCaption,
+          height: 1.35,
+        ),
+        labelLarge: const TextStyle(
+          fontSize: fontSmall,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: surface,
@@ -119,11 +135,11 @@ class AppTheme {
           horizontal: 14,
           vertical: 13,
         ),
-        hintStyle: const TextStyle(color: subtle, fontSize: 12.5),
-        labelStyle: const TextStyle(color: muted, fontSize: 12.5),
+        hintStyle: const TextStyle(color: subtle, fontSize: fontSmall),
+        labelStyle: const TextStyle(color: muted, fontSize: fontSmall),
         floatingLabelStyle: const TextStyle(
           color: deepBlue,
-          fontSize: 12,
+          fontSize: fontSmall,
           fontWeight: FontWeight.w600,
         ),
         prefixIconColor: muted,
@@ -156,7 +172,7 @@ class AppTheme {
           foregroundColor: Colors.white,
           backgroundColor: blue,
           textStyle: const TextStyle(
-            fontSize: 12.8,
+            fontSize: fontSmall,
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
@@ -173,7 +189,7 @@ class AppTheme {
           backgroundColor: surface,
           side: const BorderSide(color: borderStrong),
           textStyle: const TextStyle(
-            fontSize: 12.8,
+            fontSize: fontSmall,
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
@@ -186,7 +202,7 @@ class AppTheme {
           foregroundColor: deepBlue,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           textStyle: const TextStyle(
-            fontSize: 12.5,
+            fontSize: fontSmall,
             fontWeight: FontWeight.w700,
           ),
           shape: RoundedRectangleBorder(
@@ -209,7 +225,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         labelStyle: const TextStyle(
           color: text,
-          fontSize: 11.5,
+          fontSize: fontCaption,
           fontWeight: FontWeight.w600,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -218,16 +234,16 @@ class AppTheme {
         headingRowColor: WidgetStatePropertyAll(surfaceSoft),
         headingTextStyle: TextStyle(
           color: Color(0xFF475467),
-          fontSize: 11.5,
+          fontSize: fontCaption,
           fontWeight: FontWeight.w700,
         ),
-        dataTextStyle: TextStyle(color: text, fontSize: 12),
+        dataTextStyle: TextStyle(color: text, fontSize: fontSmall),
         dividerThickness: .7,
         horizontalMargin: 16,
         columnSpacing: 20,
-        headingRowHeight: 46,
+        headingRowHeight: 48,
         dataRowMinHeight: 48,
-        dataRowMaxHeight: 62,
+        dataRowMaxHeight: 88,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
@@ -247,7 +263,10 @@ class AppTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: navy,
-        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 12.5),
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: fontSmall,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
@@ -260,7 +279,7 @@ class AppTheme {
           color: navy,
           borderRadius: BorderRadius.circular(8),
         ),
-        textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+        textStyle: const TextStyle(color: Colors.white, fontSize: fontCaption),
       ),
       scrollbarTheme: ScrollbarThemeData(
         thickness: const WidgetStatePropertyAll(7),

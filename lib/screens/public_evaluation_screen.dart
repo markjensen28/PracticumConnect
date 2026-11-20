@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import 'pdf_template_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
@@ -19,6 +22,12 @@ class PublicEvaluationScreen extends StatefulWidget {
 }
 
 class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
+  final _code = TextEditingController();
+  String? _proof;
+  Uint8List? _completedPdf;
+  String? _uploadId;
+  String? _fileName;
+  bool _codeSent = false;
   final _comments = TextEditingController();
   final _email = TextEditingController();
   final _ratings = <String, int>{
@@ -46,6 +55,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   void dispose() {
     _comments.dispose();
     _email.dispose();
+    _code.dispose();
     super.dispose();
   }
 
@@ -146,12 +156,18 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                         );
                         final evaluationCard = _EvaluationCard(
                           evaluation: evaluation,
+                          fileName: _fileName,
+                          onDownload: () => _pdfAction(false),
+                          onUpload: () => _pdfAction(true),
                           authorized: _authorized,
                           verifying: _verifying,
                           submitting: _submitting,
                           confirmed: _confirmed,
                           error: _error,
                           emailController: _email,
+                          codeController: _code,
+                          codeSent: _codeSent,
+                          onRequest: _requestCode,
                           commentsController: _comments,
                           ratings: _ratings,
                           onVerify: _verifyAccess,
@@ -163,6 +179,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
                           labelFor: _label,
                         );
 
+                        if (!_authorized) return evaluationCard;
                         if (!wide) {
                           return Column(
                             children: [
@@ -203,6 +220,29 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     _ => 'Initiative',
   };
 
+  Future<void> _requestCode() async {
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.requestEvaluationCode(
+        widget.token,
+        _email.text.trim(),
+      );
+      if (mounted) {
+        setState(() {
+          _codeSent = true;
+          _code.clear();
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _verifying = false);
+    }
+  }
+
   Future<void> _verifyAccess() async {
     final entered = _email.text.trim();
     if (entered.isEmpty || !entered.contains('@')) {
@@ -218,13 +258,16 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     });
 
     try {
-      await widget.repository.verifyPublicEvaluationAccess(
+      final verified = await widget.repository.verifyPublicEvaluationAccess(
+        code: _code.text.trim(),
         token: widget.token,
         supervisorEmail: entered,
       );
       if (mounted) {
         setState(() {
           _verifying = false;
+          _proof = verified.proof;
+          _evaluationFuture = Future.value(verified.evaluation);
           _authorized = true;
         });
       }
@@ -236,6 +279,73 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
           _error = '$error';
         });
       }
+    }
+  }
+
+  Future<void> _pdfAction(bool upload) async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final credentials = {
+      'token': widget.token,
+      'email': _email.text.trim(),
+      'proof': _proof,
+    };
+    try {
+      if (upload) {
+        final file = await FilePicker.pickFile(
+          type: FileType.custom,
+          allowedExtensions: ['pdf'],
+        );
+        if (file == null) return;
+        if ((await file.length() ?? 0) > 10 * 1024 * 1024) {
+          throw StateError('Choose a PDF of up to 10 MB.');
+        }
+        final bytes = await file.readAsBytes();
+        if (bytes.length > 10 * 1024 * 1024) {
+          throw StateError('Choose a PDF of up to 10 MB.');
+        }
+        if (!mounted) return;
+        setState(() {
+          _completedPdf = bytes;
+          _uploadId = null;
+          _fileName = file.name;
+          _confirmed = false;
+        });
+        await showPdfTemplatePreview(
+          context,
+          bytes: bytes,
+          title: 'Review completed evaluation',
+          fileName: file.name,
+        );
+      } else {
+        final bytes = await widget.repository.evaluationPdf({
+          ...credentials,
+          'action': 'officialPdf',
+        });
+        if (mounted) {
+          await showPdfTemplatePreview(
+            context,
+            bytes: bytes,
+            title: 'Official evaluation form',
+            fileName: 'official-evaluation.pdf',
+          );
+        }
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = '$error';
+          if (_error!.contains('Verify your mailbox again')) {
+            _authorized = false;
+            _proof = null;
+            _codeSent = false;
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -254,9 +364,19 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     });
 
     try {
+      final pdf = _completedPdf;
+      if (pdf != null) {
+        _uploadId ??= await widget.repository.uploadEvaluationPdf({
+          'token': widget.token,
+          'email': _email.text.trim(),
+          'proof': _proof,
+        }, pdf);
+      }
       await widget.repository.submitSupervisorEvaluation(
         token: widget.token,
         supervisorEmail: _email.text.trim(),
+        proof: _proof!,
+        uploadId: _uploadId,
         ratings: Map.unmodifiable(_ratings),
         comments: _comments.text,
       );
@@ -272,6 +392,16 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
       if (mounted) {
         setState(() {
           _submitting = false;
+          if (error.toString().contains('already submitted')) {
+            _evaluationFuture = widget.repository.loadPublicEvaluation(
+              widget.token,
+            );
+          }
+          if (error.toString().contains('Verify your mailbox again')) {
+            _authorized = false;
+            _proof = null;
+            _codeSent = false;
+          }
           _error = '$error';
         });
       }
@@ -508,6 +638,22 @@ class _AssignedInternCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
+          if (evaluation.program.isNotEmpty)
+            _InfoRow(
+              icon: Icons.school_outlined,
+              label: 'Program',
+              value: evaluation.program,
+            ),
+          if (evaluation.startDate != null || evaluation.endDate != null)
+            _InfoRow(
+              icon: Icons.date_range,
+              label: 'Deployment dates',
+              value: [
+                if (evaluation.startDate != null)
+                  _dateLabel(evaluation.startDate!),
+                if (evaluation.endDate != null) _dateLabel(evaluation.endDate!),
+              ].join(' to '),
+            ),
           _InfoRow(
             icon: Icons.business_outlined,
             label: 'Institution',
@@ -524,7 +670,7 @@ class _AssignedInternCard extends StatelessWidget {
           const SizedBox(height: 12),
           _InfoRow(
             icon: Icons.event_outlined,
-            label: 'Link Valid Until',
+            label: 'Evaluation due date',
             value: _dateLabel(evaluation.expiresAt),
           ),
           const SizedBox(height: 18),
@@ -573,8 +719,14 @@ class _EvaluationCard extends StatelessWidget {
     required this.error,
     required this.emailController,
     required this.commentsController,
+    required this.fileName,
+    required this.onDownload,
+    required this.onUpload,
     required this.ratings,
     required this.onVerify,
+    required this.codeController,
+    required this.codeSent,
+    required this.onRequest,
     required this.onRatingChanged,
     required this.onConfirmedChanged,
     required this.onSubmit,
@@ -584,6 +736,9 @@ class _EvaluationCard extends StatelessWidget {
   final PublicEvaluationAccessRecord evaluation;
   final bool authorized;
   final bool verifying;
+  final String? fileName;
+  final VoidCallback onDownload;
+  final VoidCallback onUpload;
   final bool submitting;
   final bool confirmed;
   final String? error;
@@ -591,6 +746,9 @@ class _EvaluationCard extends StatelessWidget {
   final TextEditingController commentsController;
   final Map<String, int> ratings;
   final VoidCallback onVerify;
+  final TextEditingController codeController;
+  final bool codeSent;
+  final VoidCallback onRequest;
   final void Function(String key, int value) onRatingChanged;
   final ValueChanged<bool> onConfirmedChanged;
   final VoidCallback onSubmit;
@@ -608,48 +766,66 @@ class _EvaluationCard extends StatelessWidget {
             _AccessVerification(
               evaluation: evaluation,
               controller: emailController,
+              codeController: codeController,
+              codeSent: codeSent,
+              onRequest: onRequest,
               verifying: verifying,
               error: error,
               onVerify: onVerify,
             )
           else ...[
-            Container(
-              padding: const EdgeInsets.all(13),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceBlue,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.border),
+            if (evaluation.pdfRequired) ...[
+              OutlinedButton.icon(
+                onPressed: submitting ? null : onDownload,
+                icon: const Icon(Icons.download),
+                label: const Text('Download editable evaluation form'),
               ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.fact_check_outlined,
-                    color: AppTheme.blue,
-                    size: 19,
-                  ),
-                  SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      'Rate each area from 1 to 5, where 1 is the lowest and 5 is the highest. Review your answers before final submission.',
-                      style: TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 11.5,
-                        height: 1.45,
+              OutlinedButton.icon(
+                onPressed: submitting ? null : onUpload,
+                icon: const Icon(Icons.upload_file),
+                label: Text(
+                  fileName ?? 'Upload completed evaluation PDF (up to 10 MB)',
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceBlue,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.fact_check_outlined,
+                      color: AppTheme.blue,
+                      size: 19,
+                    ),
+                    SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'Rate each area from 1 to 5, where 1 is the lowest and 5 is the highest. Review your answers before final submission.',
+                        style: TextStyle(
+                          color: AppTheme.text,
+                          fontSize: 11.5,
+                          height: 1.45,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ...ratings.keys.map(
-              (key) => _RatingField(
-                label: labelFor(key),
-                value: ratings[key]!,
-                onChanged: (value) => onRatingChanged(key, value),
+              const SizedBox(height: 16),
+              ...ratings.keys.map(
+                (key) => _RatingField(
+                  label: labelFor(key),
+                  value: ratings[key]!,
+                  onChanged: (value) => onRatingChanged(key, value),
+                ),
               ),
-            ),
+            ],
             const SizedBox(height: 4),
             const Text(
               'Additional Feedback (Optional)',
@@ -725,7 +901,12 @@ class _EvaluationCard extends StatelessWidget {
             SizedBox(
               height: 46,
               child: FilledButton.icon(
-                onPressed: submitting || !confirmed ? null : onSubmit,
+                onPressed:
+                    submitting ||
+                        !confirmed ||
+                        (evaluation.pdfRequired && fileName == null)
+                    ? null
+                    : onSubmit,
                 icon: submitting
                     ? const SizedBox.square(
                         dimension: 17,
@@ -783,6 +964,9 @@ class _AccessVerification extends StatelessWidget {
     required this.verifying,
     required this.error,
     required this.onVerify,
+    required this.codeController,
+    required this.codeSent,
+    required this.onRequest,
   });
 
   final PublicEvaluationAccessRecord evaluation;
@@ -790,6 +974,9 @@ class _AccessVerification extends StatelessWidget {
   final bool verifying;
   final String? error;
   final VoidCallback onVerify;
+  final TextEditingController codeController;
+  final bool codeSent;
+  final VoidCallback onRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -837,7 +1024,7 @@ class _AccessVerification extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         Text(
-          'This evaluation is assigned to ${evaluation.supervisorName}.',
+          'Enter the supervisor email your coordinator registered.',
           style: const TextStyle(
             color: AppTheme.text,
             fontSize: 12,
@@ -849,7 +1036,7 @@ class _AccessVerification extends StatelessWidget {
           controller: controller,
           keyboardType: TextInputType.emailAddress,
           onSubmitted: (_) {
-            if (!verifying) onVerify();
+            if (!verifying) onRequest();
           },
           decoration: const InputDecoration(
             labelText: 'Registered supervisor email',
@@ -857,6 +1044,20 @@ class _AccessVerification extends StatelessWidget {
             prefixIcon: Icon(Icons.email_outlined),
           ),
         ),
+        if (codeSent) ...[
+          const SizedBox(height: 10),
+          TextField(
+            controller: codeController,
+            decoration: const InputDecoration(
+              labelText: 'Verification code',
+              helperText: 'Check your inbox. The code expires in 10 minutes.',
+            ),
+          ),
+          TextButton(
+            onPressed: verifying ? null : onRequest,
+            child: const Text('Send another code'),
+          ),
+        ],
         if (error != null) ...[
           const SizedBox(height: 10),
           _ErrorBox(message: error!),
@@ -865,7 +1066,7 @@ class _AccessVerification extends StatelessWidget {
         SizedBox(
           height: 46,
           child: FilledButton.icon(
-            onPressed: verifying ? null : onVerify,
+            onPressed: verifying ? null : (codeSent ? onVerify : onRequest),
             icon: verifying
                 ? const SizedBox.square(
                     dimension: 17,
@@ -875,7 +1076,7 @@ class _AccessVerification extends StatelessWidget {
                     ),
                   )
                 : const Icon(Icons.verified_user_outlined, size: 18),
-            label: const Text('Verify Access'),
+            label: Text(codeSent ? 'Verify code' : 'Send verification code'),
           ),
         ),
       ],

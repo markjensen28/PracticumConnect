@@ -34,24 +34,12 @@ class WorkflowPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (eyebrow != null) ...[
-                  Text(
-                    eyebrow!,
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: .15,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                ],
                 Text(
                   title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontSize: headerConstraints.maxWidth < 520 ? 21 : 24,
+                    fontSize: headerConstraints.maxWidth < 520 ? 24 : 28,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.navy,
                     letterSpacing: -.35,
@@ -64,7 +52,7 @@ class WorkflowPage extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppTheme.muted,
-                    fontSize: 13,
+                    fontSize: AppTheme.fontSmall,
                     height: 1.4,
                   ),
                 ),
@@ -113,7 +101,7 @@ class WorkflowPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           buildHeader(),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           Expanded(child: child),
         ],
       );
@@ -166,7 +154,7 @@ class SectionCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           color: AppTheme.text,
                           fontWeight: FontWeight.w800,
-                          fontSize: 14,
+                          fontSize: 17,
                         ),
                       ),
                       if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
@@ -177,7 +165,7 @@ class SectionCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppTheme.muted,
-                            fontSize: 12,
+                            fontSize: AppTheme.fontSmall,
                             height: 1.35,
                           ),
                         ),
@@ -201,35 +189,41 @@ class SectionCard extends StatelessWidget {
 }
 
 class StatusBadge extends StatelessWidget {
-  const StatusBadge(this.label, {super.key, this.compact = false});
+  const StatusBadge(
+    this.label, {
+    super.key,
+    this.compact = false,
+    this.fontSize,
+  });
   final String label;
   final bool compact;
+  final double? fontSize;
 
   @override
   Widget build(BuildContext context) {
     final normalized = label.toLowerCase();
-    final color =
-        normalized.contains('verif') ||
-            normalized.contains('approv') ||
-            normalized == 'active' ||
-            normalized.contains('complete') ||
-            normalized.contains('passed')
-        ? AppTheme.success
-        : normalized.contains('reject') || normalized.contains('expire')
+    final color = normalized.contains('reject') || normalized.contains('expire')
         ? AppTheme.danger
         : normalized.contains('revision') ||
               normalized.contains('near') ||
               normalized.contains('renew') ||
-              normalized.contains('pending')
+              normalized.contains('pending') ||
+              normalized == 'for verification' ||
+              normalized.contains('not submitted')
         ? AppTheme.warning
         : normalized.contains('review')
         ? AppTheme.purple
-        : AppTheme.blue;
+        : normalized == 'verified' ||
+              normalized == 'approved' ||
+              normalized == 'active' ||
+              normalized == 'completed' ||
+              normalized == 'passed'
+        ? AppTheme.success
+        : AppTheme.muted;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color.withValues(alpha: .09),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: .14)),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
@@ -242,7 +236,9 @@ class StatusBadge extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: color,
-            fontSize: compact ? 9.8 : 10.8,
+            fontSize: fontSize == null || fontSize! < AppTheme.fontCaption
+                ? AppTheme.fontCaption
+                : fontSize,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -295,43 +291,33 @@ class StatCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppTheme.muted,
-                    fontSize: 10.8,
+                    fontSize: AppTheme.fontSmall,
                     fontWeight: FontWeight.w600,
                     height: 1.2,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      value,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: AppTheme.text,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (caption != null) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: Text(
-                            caption!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 9.2,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: AppTheme.text,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
+                if (caption != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    caption!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: AppTheme.fontCaption,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -356,13 +342,10 @@ class WorkspaceTabs extends StatelessWidget {
   final List<int>? counts;
 
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: AppTheme.surfaceSoft,
-      border: Border.all(color: AppTheme.border),
-      borderRadius: BorderRadius.circular(12),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: AppTheme.border)),
     ),
-    padding: const EdgeInsets.all(4),
     child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -371,53 +354,69 @@ class WorkspaceTabs extends StatelessWidget {
           final count = counts != null && index < counts!.length
               ? counts![index]
               : null;
-          return InkWell(
-            borderRadius: BorderRadius.circular(9),
-            onTap: () => onSelected(index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: active ? AppTheme.surfaceBlue : Colors.transparent,
-                borderRadius: BorderRadius.circular(9),
-                border: active ? Border.all(color: AppTheme.border) : null,
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    labels[index],
-                    style: TextStyle(
-                      color: active ? AppTheme.deepBlue : AppTheme.muted,
-                      fontSize: 11,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+          return Semantics(
+            selected: active,
+            button: true,
+            child: InkWell(
+              onTap: () => onSelected(index),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: active ? AppTheme.blue : Colors.transparent,
+                      width: 2,
                     ),
                   ),
-                  if (count != null) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: active ? AppTheme.sky : AppTheme.border,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '$count',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: active ? AppTheme.deepBlue : AppTheme.muted,
-                        ),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      labels[index],
+                      style: TextStyle(
+                        color: active ? AppTheme.deepBlue : AppTheme.muted,
+                        fontSize: AppTheme.fontSmall,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
+                    if (count != null && count > 0) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '$count',
+                        style: const TextStyle(
+                          fontSize: AppTheme.fontCaption,
+                          color: AppTheme.muted,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           );
         }),
+      ),
+    ),
+  );
+}
+
+class WorkspaceTable extends StatelessWidget {
+  const WorkspaceTable({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minWidth: constraints.hasBoundedWidth ? constraints.maxWidth : 0,
+        ),
+        child: child,
       ),
     ),
   );
@@ -439,7 +438,10 @@ class InfoRow extends StatelessWidget {
           width: labelWidth,
           child: Text(
             label,
-            style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: AppTheme.fontSmall,
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -448,7 +450,7 @@ class InfoRow extends StatelessWidget {
             value.isEmpty ? '—' : value,
             style: const TextStyle(
               color: AppTheme.text,
-              fontSize: 11.3,
+              fontSize: AppTheme.fontSmall,
               fontWeight: FontWeight.w600,
               height: 1.3,
             ),
@@ -500,7 +502,10 @@ class EmptyWorkflowState extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppTheme.muted, fontSize: 12.2),
+              style: const TextStyle(
+                color: AppTheme.muted,
+                fontSize: AppTheme.fontSmall,
+              ),
             ),
           ],
         ),

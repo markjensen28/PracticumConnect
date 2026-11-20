@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
+import '../models/requirement_compliance.dart';
 import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import '../services/report_export_service.dart';
@@ -46,7 +47,16 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
   ];
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<AppUser>>(
+  Widget build(BuildContext context) =>
+      StreamBuilder<List<RequirementDefinition>>(
+        stream: widget.repository.watchRequirementDefinitions(),
+        builder: _buildReports,
+      );
+
+  Widget _buildReports(
+    BuildContext context,
+    AsyncSnapshot<List<RequirementDefinition>> definitionSnapshot,
+  ) => StreamBuilder<List<AppUser>>(
     stream: widget.repository.watchStudentsFor(widget.user),
     builder: (context, studentSnapshot) => StreamBuilder<List<InternshipProfileRecord>>(
       stream: widget.repository.watchInternshipProfilesFor(widget.user),
@@ -82,6 +92,21 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
                         );
                       }
 
+                      if (_reportType == 'Student Summary') {
+                        if (definitionSnapshot.hasError) {
+                          return const Center(
+                            child: Text(
+                              'Unable to load requirement assignments.',
+                            ),
+                          );
+                        }
+                        if (!definitionSnapshot.hasData ||
+                            !requirementSnapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                      }
                       final students =
                           studentSnapshot.data ?? const <AppUser>[];
                       final profiles =
@@ -148,6 +173,8 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
 
                       final data = _buildReportData(
                         reportType: _reportType,
+                        definitions: definitionSnapshot.data ?? const [],
+                        allRequirements: requirements,
                         students: filteredStudents,
                         studentMap: studentMap,
                         profileMap: profileMap,
@@ -515,6 +542,8 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
 
 _ReportData _buildReportData({
   required String reportType,
+  required List<RequirementDefinition> definitions,
+  required List<RequirementRecord> allRequirements,
   required List<AppUser> students,
   required Map<String, AppUser> studentMap,
   required Map<String, InternshipProfileRecord> profileMap,
@@ -608,7 +637,9 @@ _ReportData _buildReportData({
                   record.studentName,
                   date.format(record.date),
                   time.format(record.timeIn),
-                  time.format(record.timeOut),
+                  record.timeOut == null
+                      ? 'On shift'
+                      : time.format(record.timeOut!),
                   '${record.breakMinutes} min',
                   record.renderedHours.toStringAsFixed(2),
                   record.status.label,
@@ -637,7 +668,7 @@ _ReportData _buildReportData({
                   record.companyName,
                   record.supervisorName,
                   record.expired ? 'Expired' : record.status,
-                  record.submitted
+                  record.submitted && record.ratings.isNotEmpty
                       ? record.averageRating.toStringAsFixed(2)
                       : '—',
                   record.submittedAt == null
@@ -687,18 +718,27 @@ _ReportData _buildReportData({
           'Student',
           'Program',
           'Academic Year',
-          'Verified Requirements',
+          'Current AY verified / required',
+          'Submitted records in period',
           'Approved Hours',
           'Supervisor Rating',
           'Internship Stage',
         ],
         rows: students.map((student) {
           final studentRequirements = requirements
-              .where((record) => record.studentId == student.uid)
+              .where(
+                (record) =>
+                    !record.archived &&
+                    student.academicYear?.trim().isNotEmpty == true &&
+                    record.studentId == student.uid &&
+                    record.academicYear?.trim() == student.academicYear?.trim(),
+              )
               .toList();
-          final verified = studentRequirements
-              .where((record) => record.status == ReviewStatus.verified)
-              .length;
+          final compliance = RequirementCompliance.forStudent(
+            student,
+            definitions,
+            allRequirements,
+          );
           final approvedHours = dtr
               .where(
                 (record) =>
@@ -711,7 +751,9 @@ _ReportData _buildReportData({
                 (record) => record.studentId == student.uid && record.submitted,
               )
               .toList();
-          final rating = submittedEvaluations.isEmpty
+          final rating =
+              submittedEvaluations.isEmpty ||
+                  submittedEvaluations.last.ratings.isEmpty
               ? '—'
               : submittedEvaluations.last.averageRating.toStringAsFixed(2);
           final stage =
@@ -723,7 +765,8 @@ _ReportData _buildReportData({
               student.displayName,
               student.program ?? '—',
               student.academicYear ?? '—',
-              '$verified/${studentRequirements.length}',
+              compliance.label,
+              '${studentRequirements.length}',
               approvedHours.toStringAsFixed(2),
               rating,
               stage,
@@ -943,8 +986,7 @@ class _ReportTable extends StatelessWidget {
   final List<_ReportRowData> rows;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
+  Widget build(BuildContext context) => WorkspaceTable(
     child: DataTable(
       columns: headers
           .map(

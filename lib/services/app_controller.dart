@@ -41,32 +41,6 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<bool> registerStudent({
-    required String email,
-    required String password,
-    required String displayName,
-    required String studentNumber,
-  }) async {
-    busy = true;
-    error = null;
-    notifyListeners();
-    try {
-      user = await auth.registerStudent(
-        email: email,
-        password: password,
-        displayName: displayName,
-        studentNumber: studentNumber,
-      );
-      return true;
-    } catch (exception) {
-      error = _messageFor(exception);
-      return false;
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
-  }
-
   Future<bool> registerCoordinatorRequest({
     required String email,
     required String password,
@@ -125,5 +99,4 @@ class AppController extends ChangeNotifier {
     }
     return raw.replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
   }
-
 }

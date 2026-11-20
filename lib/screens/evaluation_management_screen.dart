@@ -1,7 +1,9 @@
+import '../services/pdf_template_engine.dart';
+import 'package:file_picker/file_picker.dart';
+import 'pdf_template_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
@@ -122,6 +124,31 @@ class _EvaluationManagementScreenState
                             .map(
                               (record) => _EvaluationTile(
                                 record: record,
+                                onOpen: () async {
+                                  try {
+                                    final bytes = await widget.repository
+                                        .evaluationPdf({
+                                          'action': 'staffPdf',
+                                          'token': record.id,
+                                        }, staff: true);
+                                    if (context.mounted) {
+                                      await showPdfTemplatePreview(
+                                        context,
+                                        bytes: bytes,
+                                        title: 'Completed evaluation',
+                                        fileName: 'evaluation.pdf',
+                                      );
+                                    }
+                                  } catch (error) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(content: Text('$error')),
+                                      );
+                                    }
+                                  }
+                                },
                                 onCopy: () => _copyLink(context, record),
                                 onEmail: () => _emailLink(context, record),
                               ),
@@ -145,6 +172,7 @@ class _EvaluationManagementScreenState
     final supervisor = TextEditingController();
     final email = TextEditingController();
     final validDays = TextEditingController(text: '14');
+    PlatformFile? officialFile;
     var saving = false;
 
     await showDialog<void>(
@@ -204,10 +232,27 @@ class _EvaluationManagementScreenState
                     decoration: const InputDecoration(
                       labelText: 'Supervisor email',
                       helperText:
-                          'The supervisor must enter this same email before the evaluation form is unlocked.',
+                          'Verification codes are sent to this mailbox.',
                     ),
                   ),
                   const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf),
+                    label: Text(
+                      officialFile?.name ?? 'Select official editable PDF',
+                    ),
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            final file = await FilePicker.pickFile(
+                              type: FileType.custom,
+                              allowedExtensions: ['pdf'],
+                            );
+                            if (file != null && dialogContext.mounted) {
+                              setDialogState(() => officialFile = file);
+                            }
+                          },
+                  ),
                   TextField(
                     controller: validDays,
                     keyboardType: TextInputType.number,
@@ -230,8 +275,25 @@ class _EvaluationManagementScreenState
                   : () async {
                       setDialogState(() => saving = true);
                       try {
+                        if (officialFile == null) {
+                          throw StateError(
+                            'Select the approved editable PDF first.',
+                          );
+                        }
+                        if (PdfTemplateEngine.available) {
+                          await PdfTemplateEngine.inspect(
+                            await officialFile!.readAsBytes(),
+                          );
+                        }
+                        final template = await widget.repository
+                            .savePdfFormTemplate(
+                              actor: widget.user,
+                              officialFile: officialFile,
+                              fields: const [],
+                            );
                         final token = await widget.repository
                             .createSupervisorEvaluation(
+                              templatePath: template.officialPath,
                               actor: widget.user,
                               student: selected,
                               companyName: company.text,
@@ -296,25 +358,20 @@ class _EvaluationManagementScreenState
     BuildContext context,
     SupervisorEvaluationRecord record,
   ) async {
-    final link = _evaluationLink(record.id);
-    final uri = Uri(
-      scheme: 'mailto',
-      path: record.supervisorEmail,
-      queryParameters: {
-        'subject': 'Practicum Connect - Supervisor Evaluation',
-        'body':
-            'Hello ${record.supervisorName},\n\nPlease complete the Practicum Connect evaluation for ${record.studentName}:\n$link\n\nThis is a one-time secure link and may expire.',
-      },
-    );
-    if (!await launchUrl(uri)) {
+    try {
+      await widget.repository.sendEvaluationInvitation(record.id);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No email application was available. Copy the secure link instead.',
-            ),
+          SnackBar(
+            content: Text('Invitation sent to ${record.supervisorEmail}.'),
           ),
         );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
   }
@@ -323,11 +380,13 @@ class _EvaluationManagementScreenState
 class _EvaluationTile extends StatelessWidget {
   const _EvaluationTile({
     required this.record,
+    required this.onOpen,
     required this.onCopy,
     required this.onEmail,
   });
 
   final SupervisorEvaluationRecord record;
+  final VoidCallback onOpen;
   final VoidCallback onCopy;
   final VoidCallback onEmail;
 
@@ -375,19 +434,31 @@ class _EvaluationTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   '${record.companyName} • ${record.supervisorName} • ${record.supervisorEmail}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   record.submitted
-                      ? 'Submitted ${record.submittedAt == null ? '' : DateFormat.yMMMd().add_jm().format(record.submittedAt!)} • Rating ${record.averageRating.toStringAsFixed(2)}/5'
+                      ? 'Submitted ${record.submittedAt == null ? '' : DateFormat.yMMMd().add_jm().format(record.submittedAt!)}${record.ratings.isEmpty ? '' : ' \u2022 Rating ${record.averageRating.toStringAsFixed(2)}/5'}'
                       : 'Expires ${DateFormat.yMMMd().add_jm().format(record.expiresAt)}',
-                  style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 12),
+          if (record.hasCompletedPdf)
+            IconButton(
+              onPressed: onOpen,
+              icon: const Icon(Icons.picture_as_pdf),
+              tooltip: 'Open completed PDF',
+            ),
           StatusBadge(status, compact: true),
           if (!record.submitted && !record.expired) ...[
             const SizedBox(width: 4),
@@ -397,7 +468,7 @@ class _EvaluationTile extends StatelessWidget {
               icon: const Icon(Icons.copy_rounded),
             ),
             IconButton(
-              tooltip: 'Open email client',
+              tooltip: 'Send invitation',
               onPressed: onEmail,
               icon: const Icon(Icons.email_outlined),
             ),

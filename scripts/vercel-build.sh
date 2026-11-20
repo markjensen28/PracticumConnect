@@ -31,7 +31,7 @@ echo "Building Practicum Connect for web..."
 flutter build web --release \
   --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
   --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
-  --dart-define="SUPABASE_BUCKET=${SUPABASE_BUCKET:-internship-documents}"
+  --dart-define="SUPABASE_BUCKET=${SUPABASE_BUCKET:-PracticumConnectStorage}"
 
 if [ ! -f "build/web/index.html" ]; then
   echo "ERROR: Flutter web build output was not created." >&2

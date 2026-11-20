@@ -1,6 +1,13 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_dropzone/flutter_dropzone.dart';
 import 'package:intl/intl.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_theme.dart';
@@ -9,6 +16,8 @@ import '../models/records.dart';
 import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
+import 'pdf_template_widgets.dart';
+import 'repository_directory.dart';
 
 class StudentStatusTrackerScreen extends StatelessWidget {
   const StudentStatusTrackerScreen({
@@ -77,6 +86,7 @@ class StudentStatusTrackerScreen extends StatelessWidget {
                   profileSnapshot.data?.stage ??
                   InternshipStage.pendingRequirements;
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _InternshipStageProgress(stage: stage),
                   const SizedBox(height: 8),
@@ -143,7 +153,7 @@ class StudentStatusTrackerScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 12),
                             SizedBox(
-                              width: 285,
+                              width: 340,
                               child: SingleChildScrollView(child: side),
                             ),
                           ],
@@ -175,14 +185,45 @@ class _InternshipStageProgress extends StatelessWidget {
       subtitle: 'Current stage: ${stage.label}',
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 760;
+          final compact = constraints.maxWidth < 960;
           if (compact) {
-            return Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (var index = 0; index < stages.length; index++)
-                  StatusBadge(stages[index].label, compact: true),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          index < currentIndex
+                              ? Icons.check_circle
+                              : index == currentIndex
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                          size: 20,
+                          color: index <= currentIndex
+                              ? AppTheme.blue
+                              : AppTheme.muted,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            stages[index].label,
+                            style: TextStyle(
+                              fontSize: AppTheme.fontSmall,
+                              color: index == currentIndex
+                                  ? AppTheme.deepBlue
+                                  : AppTheme.muted,
+                              fontWeight: index == currentIndex
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             );
           }
@@ -221,7 +262,7 @@ class _InternshipStageProgress extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 9,
+                          fontSize: AppTheme.fontCaption,
                           fontWeight: index == currentIndex
                               ? FontWeight.w800
                               : FontWeight.w600,
@@ -282,11 +323,6 @@ class _TrackerList extends StatelessWidget {
     return Column(
       children: items.map((item) {
         final record = item.record;
-        final progress = record == null
-            ? 0.0
-            : record.status == ReviewStatus.verified
-            ? 1.0
-            : .62;
         return Padding(
           padding: const EdgeInsets.only(bottom: 9),
           child: Card(
@@ -319,20 +355,12 @@ class _TrackerList extends StatelessWidget {
                               child: Text(
                                 item.title,
                                 style: const TextStyle(
-                                  fontSize: 12.5,
+                                  fontSize: AppTheme.fontSmall,
                                   color: AppTheme.text,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
                             ),
-                            Text(
-                              record == null ? '0 / 1' : '1 / 1',
-                              style: const TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 9.5,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
                             StatusBadge(
                               record?.status.label ?? 'Not submitted',
                               compact: true,
@@ -342,20 +370,11 @@ class _TrackerList extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           record == null
-                              ? 'Not yet submitted'
+                              ? 'Due ${shortDate(item.dueDate)}'
                               : 'Submitted on ${shortDate(record.submittedAt)}',
                           style: const TextStyle(
                             color: AppTheme.muted,
-                            fontSize: 9.5,
-                          ),
-                        ),
-                        const SizedBox(height: 9),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 6,
-                            backgroundColor: AppTheme.border,
+                            fontSize: AppTheme.fontCaption,
                           ),
                         ),
                         if (record?.remarks?.isNotEmpty == true) ...[
@@ -374,7 +393,7 @@ class _TrackerList extends StatelessWidget {
                                   'Feedback from Coordinator\n${record!.remarks}',
                                   style: const TextStyle(
                                     color: AppTheme.muted,
-                                    fontSize: 9.5,
+                                    fontSize: AppTheme.fontCaption,
                                     height: 1.35,
                                   ),
                                 ),
@@ -447,7 +466,7 @@ class _StudentTrackerSide extends StatelessWidget {
                         Text(
                           user.displayName,
                           style: const TextStyle(
-                            fontSize: 11.5,
+                            fontSize: AppTheme.fontSmall,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -455,7 +474,7 @@ class _StudentTrackerSide extends StatelessWidget {
                           user.studentNumber ?? 'No student number',
                           style: const TextStyle(
                             color: AppTheme.muted,
-                            fontSize: 9.5,
+                            fontSize: AppTheme.fontCaption,
                           ),
                         ),
                       ],
@@ -485,7 +504,10 @@ class _StudentTrackerSide extends StatelessWidget {
           child: upcoming.isEmpty
               ? const Text(
                   'No upcoming deadlines.',
-                  style: TextStyle(fontSize: 10.5, color: AppTheme.muted),
+                  style: TextStyle(
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.muted,
+                  ),
                 )
               : Column(
                   children: upcoming.take(6).map((item) {
@@ -511,14 +533,14 @@ class _StudentTrackerSide extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 10.5,
+                                    fontSize: AppTheme.fontCaption,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
                                 Text(
                                   shortDate(item.dueDate),
                                   style: const TextStyle(
-                                    fontSize: 9,
+                                    fontSize: AppTheme.fontCaption,
                                     color: AppTheme.muted,
                                   ),
                                 ),
@@ -531,7 +553,7 @@ class _StudentTrackerSide extends StatelessWidget {
                               color: days <= 3
                                   ? AppTheme.danger
                                   : AppTheme.muted,
-                              fontSize: 8.5,
+                              fontSize: AppTheme.fontCaption,
                             ),
                           ),
                         ],
@@ -559,7 +581,7 @@ class _StudentTrackerSide extends StatelessWidget {
                   'Submit your documents on or before the deadline to avoid delays in your internship clearance.',
                   style: TextStyle(
                     color: AppTheme.muted,
-                    fontSize: 9.2,
+                    fontSize: AppTheme.fontCaption,
                     height: 1.35,
                   ),
                 ),
@@ -591,122 +613,11 @@ class _StudentRequirementsChecklistScreenState
     extends State<StudentRequirementsChecklistScreen> {
   String _query = '';
   String _filter = 'All Requirements';
-  final Map<String, PlatformFile> _selectedFiles = {};
-  final Map<String, String> _uploadErrors = {};
-  bool _uploading = false;
-  String? _uploadingTitle;
-
-  bool _canSubmit(_RequirementChecklistItem item) =>
-      item.record == null ||
-      item.record!.status == ReviewStatus.needsRevision ||
-      item.record!.status == ReviewStatus.rejected;
-
-  Future<bool> _chooseFile(_RequirementChecklistItem item) async {
-    if (_uploading || !_canSubmit(item)) return false;
-    final file = await FilePicker.pickFile(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg'],
-    );
-    if (file == null || !mounted) return false;
-    final selectedSize = (await file.readAsBytes()).length;
-    if (!mounted) return false;
-    if (selectedSize == 0 || selectedSize > 5 * 1024 * 1024) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Each file must be non-empty and at most 5 MB.'),
-        ),
-      );
-      return false;
-    }
-    setState(() {
-      _selectedFiles[item.definition.id] = file;
-      _uploadErrors.remove(item.definition.id);
-    });
-    return true;
-  }
-
-  Future<void> _submitSelected(
-    List<_RequirementChecklistItem> items, {
-    String? onlyDefinitionId,
-  }) async {
-    if (_uploading) return;
-    if (onlyDefinitionId != null &&
-        !_selectedFiles.containsKey(onlyDefinitionId)) {
-      final item = items
-          .where((item) => item.definition.id == onlyDefinitionId)
-          .firstOrNull;
-      if (item == null || !await _chooseFile(item)) return;
-    }
-    final selected = items
-        .where(
-          (item) =>
-              _selectedFiles.containsKey(item.definition.id) &&
-              (onlyDefinitionId == null ||
-                  item.definition.id == onlyDefinitionId),
-        )
-        .toList();
-    if (selected.isEmpty) return;
-
-    setState(() {
-      _uploading = true;
-      _uploadErrors.clear();
-    });
-    var successes = 0;
-    var failures = 0;
-    for (final item in selected) {
-      if (!mounted) break;
-      final id = item.definition.id;
-      final file = _selectedFiles[id]!;
-      setState(() => _uploadingTitle = item.definition.title);
-      try {
-        if (!_canSubmit(item)) {
-          throw StateError('This requirement has already been submitted.');
-        }
-        if (item.record == null) {
-          await widget.repository.submitRequirement(
-            user: widget.user,
-            title: item.definition.title,
-            definition: item.definition,
-            file: file,
-          );
-        } else {
-          await widget.repository.resubmitRequirement(
-            user: widget.user,
-            requirement: item.record!,
-            file: file,
-          );
-        }
-        successes++;
-        _selectedFiles.remove(id);
-      } catch (error) {
-        failures++;
-        // The repository can throw after saving a document (e.g. notification
-        // failure), so do not automatically retry a possibly saved upload.
-        _selectedFiles.remove(id);
-        _uploadErrors[id] = '$error — Refresh the checklist before retrying.';
-      }
-      if (mounted) setState(() {});
-    }
-    if (!mounted) return;
-    setState(() {
-      _uploading = false;
-      _uploadingTitle = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$successes submitted; $failures need attention. '
-          'Review each requirement before trying again.',
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'Requirements Checklist',
     subtitle:
-        'Review your required internship documents, deadlines, forms, and submission progress.',
+        'Track required documents, deadlines, and review status. Upload and preview files in the Document Submission Bin.',
     eyebrow: 'My Internship  ›  Requirements Checklist',
     child: StreamBuilder<List<RequirementDefinition>>(
       stream: widget.repository.watchRequirementDefinitions(),
@@ -877,41 +788,26 @@ class _StudentRequirementsChecklistScreenState
                         ),
                       ),
                       if (widget.user.program?.isNotEmpty == true)
-                        StatusBadge(widget.user.program!, compact: true),
+                        Text(
+                          widget.user.program!,
+                          style: const TextStyle(
+                            color: AppTheme.muted,
+                            fontSize: AppTheme.fontSmall,
+                          ),
+                        ),
                       if (widget.user.academicYear?.isNotEmpty == true)
-                        StatusBadge(widget.user.academicYear!, compact: true),
+                        Text(
+                          widget.user.academicYear!,
+                          style: const TextStyle(
+                            color: AppTheme.muted,
+                            fontSize: AppTheme.fontSmall,
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-              if (_selectedFiles.isNotEmpty || _uploading) ...[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          _uploading
-                              ? 'Uploading: ${_uploadingTitle ?? 'preparing'}'
-                              : '${_selectedFiles.length} file(s) ready • 5 MB maximum each',
-                        ),
-                        FilledButton.icon(
-                          onPressed: _uploading
-                              ? null
-                              : () => _submitSelected(items),
-                          icon: const Icon(Icons.cloud_upload_outlined),
-                          label: const Text('Submit All Selected Files'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
               if (visible.isEmpty)
                 const EmptyWorkflowState(
                   icon: Icons.fact_check_outlined,
@@ -923,18 +819,7 @@ class _StudentRequirementsChecklistScreenState
                 ...visible.map(
                   (item) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _RequirementChecklistTile(
-                      item: item,
-                      repository: widget.repository,
-                      selectedFile: _selectedFiles[item.definition.id],
-                      uploadError: _uploadErrors[item.definition.id],
-                      uploading: _uploading,
-                      onChooseFile: () => _chooseFile(item),
-                      onSubmit: () => _submitSelected(
-                        items,
-                        onlyDefinitionId: item.definition.id,
-                      ),
-                    ),
+                    child: _RequirementChecklistTile(item: item),
                   ),
                 ),
             ],
@@ -1000,7 +885,7 @@ class _ChecklistSummaryCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppTheme.muted,
-                      fontSize: 10.5,
+                      fontSize: AppTheme.fontSmall,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1009,7 +894,7 @@ class _ChecklistSummaryCard extends StatelessWidget {
                     value,
                     style: const TextStyle(
                       color: AppTheme.text,
-                      fontSize: 20,
+                      fontSize: 22,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1024,23 +909,9 @@ class _ChecklistSummaryCard extends StatelessWidget {
 }
 
 class _RequirementChecklistTile extends StatelessWidget {
-  const _RequirementChecklistTile({
-    required this.item,
-    required this.repository,
-    required this.selectedFile,
-    required this.uploadError,
-    required this.uploading,
-    required this.onChooseFile,
-    required this.onSubmit,
-  });
+  const _RequirementChecklistTile({required this.item});
 
   final _RequirementChecklistItem item;
-  final PracticumRepository repository;
-  final PlatformFile? selectedFile;
-  final String? uploadError;
-  final bool uploading;
-  final VoidCallback onChooseFile;
-  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -1057,216 +928,142 @@ class _RequirementChecklistTile extends StatelessWidget {
         : needsAttention
         ? AppTheme.warning
         : AppTheme.blue;
+    final icon = completed
+        ? Icons.check_circle_outline_rounded
+        : needsAttention
+        ? Icons.assignment_late_outlined
+        : Icons.hourglass_top_rounded;
+    final description = definition.description.trim().isNotEmpty
+        ? definition.description.trim()
+        : definition.instructions.trim().isNotEmpty
+        ? definition.instructions.trim()
+        : 'Details unavailable.';
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 680;
-            final leading = Container(
-              width: 42,
-              height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: indicator.withValues(alpha: .09),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(11),
               ),
-              child: Icon(
-                completed
-                    ? Icons.check_circle_outline_rounded
-                    : needsAttention
-                    ? Icons.assignment_late_outlined
-                    : Icons.hourglass_top_rounded,
-                color: indicator,
-                size: 21,
-              ),
-            );
-
-            final body = Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      definition.title,
-                      style: const TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    StatusBadge(statusLabel, compact: true),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  definition.description.isEmpty
-                      ? definition.instructions
-                      : definition.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.muted,
-                    fontSize: 10.5,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 5,
-                  children: [
-                    _ChecklistMeta(
-                      icon: Icons.event_outlined,
-                      text: 'Due ${shortDate(definition.dueDate)}',
-                    ),
-                    _ChecklistMeta(
-                      icon: Icons.folder_outlined,
-                      text: definition.category,
-                    ),
-                    if (record != null)
-                      _ChecklistMeta(
-                        icon: Icons.history_rounded,
-                        text:
-                            'Submitted ${DateFormat.MMMd().format(record.submittedAt)}',
-                      ),
-                  ],
-                ),
-                if (definition.instructions.isNotEmpty &&
-                    definition.instructions != definition.description) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    'Instructions: ${definition.instructions}',
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      color: AppTheme.muted,
-                    ),
-                  ),
-                ],
-                if (record?.remarks?.isNotEmpty == true) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    'Coordinator feedback: ${record!.remarks}',
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      color: AppTheme.warning,
-                    ),
-                  ),
-                ],
-                if (selectedFile != null) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    'Ready to upload: ${selectedFile!.name} '
-                    '(5 MB maximum per file)',
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      color: AppTheme.blue,
-                    ),
-                  ),
-                ],
-                if (uploadError != null) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    uploadError!,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      color: AppTheme.warning,
-                    ),
-                  ),
-                ],
-              ],
-            );
-
-            final actions = Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              alignment: compact ? WrapAlignment.start : WrapAlignment.end,
-              children: [
-                if (definition.officialFormUrl?.isNotEmpty == true)
-                  OutlinedButton.icon(
-                    onPressed: () => launchUrl(
-                      Uri.parse(definition.officialFormUrl!),
-                      mode: LaunchMode.externalApplication,
-                      webOnlyWindowName: '_blank',
-                    ),
-                    icon: const Icon(Icons.download_outlined, size: 15),
-                    label: const Text('Official Form'),
-                  ),
-                if (definition.sampleFormUrl?.isNotEmpty == true)
-                  OutlinedButton.icon(
-                    onPressed: () => launchUrl(
-                      Uri.parse(definition.sampleFormUrl!),
-                      mode: LaunchMode.externalApplication,
-                      webOnlyWindowName: '_blank',
-                    ),
-                    icon: const Icon(Icons.visibility_outlined, size: 15),
-                    label: const Text('Sample'),
-                  ),
-                if (record?.storagePath?.isNotEmpty == true)
-                  OutlinedButton.icon(
-                    onPressed: () => openStorageDocument(
-                      context,
-                      repository,
-                      record!.storagePath!,
-                    ),
-                    icon: const Icon(Icons.description_outlined, size: 15),
-                    label: const Text('View Uploaded File'),
-                  ),
-                if (needsAttention) ...[
-                  OutlinedButton.icon(
-                    onPressed: uploading ? null : onChooseFile,
-                    icon: const Icon(Icons.attach_file_outlined, size: 15),
-                    label: Text(
-                      selectedFile == null ? 'Choose File' : 'Change File',
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: uploading ? null : onSubmit,
-                    icon: const Icon(Icons.upload_file_outlined, size: 15),
-                    label: Text(
-                      selectedFile == null ? 'Submit' : 'Submit Selected',
-                    ),
-                  ),
-                ],
-              ],
-            );
-
-            if (compact) {
-              return Column(
+              child: Icon(icon, color: indicator, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Wrap(
+                    spacing: 9,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      leading,
-                      const SizedBox(width: 12),
-                      Expanded(child: body),
+                      Text(
+                        definition.title.trim().isEmpty
+                            ? 'Requirement unavailable'
+                            : definition.title.trim(),
+                        style: const TextStyle(
+                          color: AppTheme.text,
+                          fontSize: AppTheme.fontBody,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      StatusBadge(
+                        statusLabel,
+                        compact: true,
+                        fontSize: AppTheme.fontSmall,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  actions,
+                  const SizedBox(height: 6),
+                  Text(
+                    description,
+                    style: const TextStyle(
+                      color: AppTheme.muted,
+                      fontSize: AppTheme.fontSmall,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 7,
+                    children: [
+                      _ChecklistMeta(
+                        icon: Icons.event_outlined,
+                        text: 'Due ${shortDate(definition.dueDate)}',
+                      ),
+                      if (definition.category.trim().isNotEmpty)
+                        _ChecklistMeta(
+                          icon: Icons.folder_outlined,
+                          text: definition.category.trim(),
+                        ),
+                      if (record != null)
+                        _ChecklistMeta(
+                          icon: Icons.history_rounded,
+                          text:
+                              'Submitted ${DateFormat.MMMd().format(record.submittedAt)}',
+                        ),
+                    ],
+                  ),
+                  if (definition.instructions.trim().isNotEmpty &&
+                      definition.instructions.trim() != description) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Instructions: ${definition.instructions.trim()}',
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: AppTheme.fontSmall,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                  if (record?.remarks?.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceSoft,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 15,
+                            color: AppTheme.muted,
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              'Coordinator feedback: ${record!.remarks!.trim()}',
+                              style: const TextStyle(
+                                color: AppTheme.text,
+                                fontSize: AppTheme.fontSmall,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
-              );
-            }
-
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                leading,
-                const SizedBox(width: 13),
-                Expanded(child: body),
-                const SizedBox(width: 16),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: actions,
-                ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1283,14 +1080,26 @@ class _ChecklistMeta extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(icon, size: 13, color: AppTheme.subtle),
+      Icon(icon, size: 14, color: AppTheme.muted),
       const SizedBox(width: 4),
-      Text(text, style: const TextStyle(color: AppTheme.muted, fontSize: 9.5)),
+      Text(
+        text,
+        style: const TextStyle(
+          color: AppTheme.muted,
+          fontSize: AppTheme.fontSmall,
+        ),
+      ),
     ],
   );
 }
 
-String _studentRequirementStatusLabel(RequirementRecord? record) {
+String _studentRequirementStatusLabel(
+  RequirementRecord? record, {
+  bool locallySubmitted = false,
+}) {
+  if (locallySubmitted && record?.status != ReviewStatus.pending) {
+    return 'Submitted';
+  }
   if (record == null) return 'Not submitted';
   if (record.status == ReviewStatus.pending) return 'Submitted';
   return record.status.label;
@@ -1318,6 +1127,7 @@ class _DocumentSubmissionBinScreenState
   String _status = 'All Statuses';
   String _category = 'All Document Types';
   RequirementDefinition? _selected;
+  final Set<String> _locallySubmittedDefinitions = {};
 
   @override
   Widget build(BuildContext context) => WorkflowPage(
@@ -1325,197 +1135,278 @@ class _DocumentSubmissionBinScreenState
     subtitle:
         'View instructions, download forms, and upload required documents.',
     eyebrow: 'Home  ›  Document Submission Bin',
+    actions: [
+      OutlinedButton.icon(
+        icon: const Icon(Icons.folder_open_rounded),
+        label: const Text('My documents'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              appBar: AppBar(title: const Text('My documents')),
+              body: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: DocumentRepositoryScreen(
+                    user: widget.user,
+                    repository: widget.repository,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
     child: StreamBuilder<List<RequirementDefinition>>(
       stream: widget.repository.watchRequirementDefinitions(),
-      builder: (context, definitionSnapshot) =>
-          StreamBuilder<List<RequirementRecord>>(
-            stream: widget.repository.watchRequirements(widget.user),
-            builder: (context, recordSnapshot) {
-              final records =
-                  recordSnapshot.data ?? const <RequirementRecord>[];
-              final allDefinitions =
-                  (definitionSnapshot.data ?? const <RequirementDefinition>[])
-                      .where(
-                        (definition) =>
-                            definition.active &&
-                            (definition.program == 'All Programs' ||
-                                definition.program == widget.user.program),
-                      )
-                      .toList();
-              final categories = {
-                'All Document Types',
-                ...allDefinitions.map((definition) => definition.category),
-              }.toList();
-              final definitions = allDefinitions.where((definition) {
-                final record = _recordFor(definition, records);
-                final matchesQuery =
-                    _query.isEmpty ||
-                    '${definition.title} ${definition.description}'
-                        .toLowerCase()
-                        .contains(_query);
-                final matchesStatus =
-                    _status == 'All Statuses' ||
-                    (_status == 'Not submitted'
-                        ? record == null
-                        : _studentRequirementStatusLabel(record) == _status);
-                final matchesCategory =
-                    _category == 'All Document Types' ||
-                    definition.category == _category;
-                return matchesQuery && matchesStatus && matchesCategory;
-              }).toList();
-              final initialDefinitionId = widget.initialDefinitionId;
-              final selected =
-                  _selected != null &&
-                      definitions.any((item) => item.id == _selected!.id)
-                  ? definitions.firstWhere((item) => item.id == _selected!.id)
-                  : initialDefinitionId != null &&
-                        definitions.any(
-                          (item) => item.id == initialDefinitionId,
-                        )
-                  ? definitions.firstWhere(
-                      (item) => item.id == initialDefinitionId,
-                    )
-                  : definitions.firstOrNull;
-              final selectedRecord = selected == null
-                  ? null
-                  : _recordFor(selected, records);
+      builder: (context, definitionSnapshot) => StreamBuilder<List<RequirementRecord>>(
+        stream: widget.repository.watchRequirements(widget.user),
+        builder: (context, recordSnapshot) {
+          if (definitionSnapshot.hasError || recordSnapshot.hasError) {
+            return const EmptyWorkflowState(
+              icon: Icons.inbox_outlined,
+              title: 'Submission data unavailable',
+              message:
+                  'Required documents are unavailable right now. Please try again later.',
+            );
+          }
+          if (!definitionSnapshot.hasData || !recordSnapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-              return Column(
+          final records = recordSnapshot.data!;
+          final allDefinitions = definitionSnapshot.data!
+              .where(
+                (definition) =>
+                    definition.active &&
+                    (definition.program == 'All Programs' ||
+                        definition.program == widget.user.program),
+              )
+              .toList();
+          final confirmedSubmissions = _locallySubmittedDefinitions.where((id) {
+            final definition = allDefinitions
+                .where((item) => item.id == id)
+                .firstOrNull;
+            return definition != null &&
+                _recordFor(definition, records)?.status == ReviewStatus.pending;
+          }).toSet();
+          if (confirmedSubmissions.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(
+                  () => _locallySubmittedDefinitions.removeAll(
+                    confirmedSubmissions,
+                  ),
+                );
+              }
+            });
+          }
+          final categories = {
+            'All Document Types',
+            ...allDefinitions.map((definition) => definition.category),
+          }.toList();
+          final definitions = allDefinitions.where((definition) {
+            final record = _recordFor(definition, records);
+            final locallySubmitted = _locallySubmittedDefinitions.contains(
+              definition.id,
+            );
+            final matchesQuery =
+                _query.isEmpty ||
+                '${definition.title} ${definition.description}'
+                    .toLowerCase()
+                    .contains(_query);
+            final matchesStatus =
+                _status == 'All Statuses' ||
+                (_status == 'Not submitted'
+                    ? record == null && !locallySubmitted
+                    : _studentRequirementStatusLabel(
+                            record,
+                            locallySubmitted: locallySubmitted,
+                          ) ==
+                          _status);
+            final matchesCategory =
+                _category == 'All Document Types' ||
+                definition.category == _category;
+            return matchesQuery && matchesStatus && matchesCategory;
+          }).toList();
+          final initialDefinitionId = widget.initialDefinitionId;
+          final selected =
+              _selected != null &&
+                  definitions.any((item) => item.id == _selected!.id)
+              ? definitions.firstWhere((item) => item.id == _selected!.id)
+              : initialDefinitionId != null &&
+                    definitions.any((item) => item.id == initialDefinitionId)
+              ? definitions.firstWhere((item) => item.id == initialDefinitionId)
+              : definitions.firstOrNull;
+          final selectedRecord = selected == null
+              ? null
+              : _recordFor(selected, records);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      SizedBox(
-                        width: 250,
-                        child: TextField(
-                          decoration: const InputDecoration(
-                            prefixIcon: Icon(Icons.search, size: 18),
-                            hintText: 'Search documents…',
-                          ),
-                          onChanged: (value) =>
-                              setState(() => _query = value.toLowerCase()),
-                        ),
+                  SizedBox(
+                    width: 250,
+                    child: TextField(
+                      style: const TextStyle(fontSize: AppTheme.fontBody),
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search, size: 18),
+                        hintText: 'Search documents…',
+                        hintStyle: TextStyle(fontSize: AppTheme.fontBody),
                       ),
-                      _filterBox(
-                        width: 160,
-                        child: InputDecorator(
-                          decoration: const InputDecoration(
-                            labelText: 'Academic Year',
-                          ),
-                          child: Text(
-                            widget.user.academicYear ?? 'Current',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
+                      onChanged: (value) =>
+                          setState(() => _query = value.toLowerCase()),
+                    ),
+                  ),
+                  _filterBox(
+                    width: 160,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Academic Year',
+                        labelStyle: TextStyle(fontSize: AppTheme.fontSmall),
                       ),
-                      _filterBox(
-                        width: 180,
-                        child: DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: categories.contains(_category)
-                              ? _category
-                              : 'All Document Types',
-                          decoration: const InputDecoration(
-                            labelText: 'Document Type',
-                          ),
-                          items: categories
+                      child: Text(
+                        widget.user.academicYear?.trim().isNotEmpty == true
+                            ? widget.user.academicYear!.trim()
+                            : 'Unavailable',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: AppTheme.fontBody),
+                      ),
+                    ),
+                  ),
+                  _filterBox(
+                    width: 180,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: categories.contains(_category)
+                          ? _category
+                          : 'All Document Types',
+                      decoration: const InputDecoration(
+                        labelText: 'Document Type',
+                        labelStyle: TextStyle(fontSize: AppTheme.fontSmall),
+                      ),
+                      items: categories
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(
+                                value,
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontBody,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) => setState(
+                        () => _category = value ?? 'All Document Types',
+                      ),
+                    ),
+                  ),
+                  _filterBox(
+                    width: 160,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: _status,
+                      decoration: const InputDecoration(
+                        labelText: 'Status',
+                        labelStyle: TextStyle(fontSize: AppTheme.fontSmall),
+                      ),
+                      items:
+                          const [
+                                'All Statuses',
+                                'Not submitted',
+                                'Submitted',
+                                'Under review',
+                                'Verified',
+                                'Needs revision',
+                                'Rejected',
+                              ]
                               .map(
                                 (value) => DropdownMenuItem(
                                   value: value,
-                                  child: Text(value),
+                                  child: Text(
+                                    value,
+                                    style: const TextStyle(
+                                      fontSize: AppTheme.fontBody,
+                                    ),
+                                  ),
                                 ),
                               )
                               .toList(),
-                          onChanged: (value) => setState(
-                            () => _category = value ?? 'All Document Types',
-                          ),
-                        ),
-                      ),
-                      _filterBox(
-                        width: 160,
-                        child: DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: _status,
-                          decoration: const InputDecoration(
-                            labelText: 'Status',
-                          ),
-                          items:
-                              const [
-                                    'All Statuses',
-                                    'Not submitted',
-                                    'Submitted',
-                                    'Under review',
-                                    'Verified',
-                                    'Needs revision',
-                                    'Rejected',
-                                  ]
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(value),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (value) =>
-                              setState(() => _status = value ?? 'All Statuses'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final grid = _SubmissionGrid(
-                          definitions: definitions,
-                          records: records,
-                          selected: selected,
-                          onSelect: (value) =>
-                              setState(() => _selected = value),
-                        );
-                        final detail = selected == null
-                            ? const EmptyWorkflowState(
-                                icon: Icons.inbox_outlined,
-                                title: 'No submission bins',
-                                message:
-                                    'Ask the coordinator to configure requirements.',
-                              )
-                            : _SubmissionDetail(
-                                definition: selected,
-                                allDefinitions: allDefinitions,
-                                record: selectedRecord,
-                                user: widget.user,
-                                repository: widget.repository,
-                              );
-                        if (constraints.maxWidth < 960) {
-                          return ListView(
-                            children: [
-                              SizedBox(height: 480, child: grid),
-                              const SizedBox(height: 12),
-                              detail,
-                            ],
-                          );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 7, child: grid),
-                            const SizedBox(width: 12),
-                            SizedBox(
-                              width: 330,
-                              child: SingleChildScrollView(child: detail),
-                            ),
-                          ],
-                        );
-                      },
+                      onChanged: (value) =>
+                          setState(() => _status = value ?? 'All Statuses'),
                     ),
                   ),
                 ],
-              );
-            },
-          ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final grid = _SubmissionGrid(
+                      definitions: definitions,
+                      records: records,
+                      locallySubmittedDefinitions: _locallySubmittedDefinitions,
+                      selected: selected,
+                      onSelect: (value) => setState(() => _selected = value),
+                    );
+                    final detail = selected == null
+                        ? EmptyWorkflowState(
+                            icon: Icons.inbox_outlined,
+                            title: allDefinitions.isEmpty
+                                ? 'No submission bins'
+                                : 'No matching requirements',
+                            message: allDefinitions.isEmpty
+                                ? 'Ask the coordinator to configure requirements.'
+                                : 'Adjust the filters to see other requirements.',
+                          )
+                        : _SubmissionDetail(
+                            definition: selected,
+                            allDefinitions: allDefinitions,
+                            record: selectedRecord,
+                            user: widget.user,
+                            repository: widget.repository,
+                            locallySubmitted: _locallySubmittedDefinitions
+                                .contains(selected.id),
+                            onSubmitted: (definitionId) => setState(
+                              () => _locallySubmittedDefinitions.add(
+                                definitionId,
+                              ),
+                            ),
+                          );
+                    if (constraints.maxWidth < 960) {
+                      return ListView(
+                        children: [
+                          SizedBox(height: 360, child: grid),
+                          const SizedBox(height: 12),
+                          detail,
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 7, child: grid),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 400,
+                          child: SingleChildScrollView(child: detail),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     ),
   );
 
@@ -1543,12 +1434,14 @@ class _SubmissionGrid extends StatelessWidget {
   const _SubmissionGrid({
     required this.definitions,
     required this.records,
+    required this.locallySubmittedDefinitions,
     required this.selected,
     required this.onSelect,
   });
 
   final List<RequirementDefinition> definitions;
   final List<RequirementRecord> records;
+  final Set<String> locallySubmittedDefinitions;
   final RequirementDefinition? selected;
   final ValueChanged<RequirementDefinition> onSelect;
 
@@ -1563,18 +1456,8 @@ class _SubmissionGrid extends StatelessWidget {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final count = constraints.maxWidth >= 760
-            ? 3
-            : constraints.maxWidth >= 500
-            ? 2
-            : 1;
-        return GridView.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: count,
-            crossAxisSpacing: 9,
-            mainAxisSpacing: 9,
-            childAspectRatio: 1.30,
-          ),
+        return ListView.separated(
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
           itemCount: definitions.length,
           itemBuilder: (context, index) {
             final definition = definitions[index];
@@ -1589,6 +1472,9 @@ class _SubmissionGrid extends StatelessWidget {
                     .toList()
                   ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
             final record = matches.firstOrNull;
+            final locallySubmitted = locallySubmittedDefinitions.contains(
+              definition.id,
+            );
             final active = selected?.id == definition.id;
             return InkWell(
               borderRadius: BorderRadius.circular(8),
@@ -1603,17 +1489,19 @@ class _SubmissionGrid extends StatelessWidget {
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        definition.title,
+                        definition.title.trim().isEmpty
+                            ? 'Unavailable'
+                            : definition.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppTheme.text,
-                          fontSize: 11.5,
+                          fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -1621,26 +1509,31 @@ class _SubmissionGrid extends StatelessWidget {
                       Text(
                         'Due: ${shortDate(definition.dueDate)}',
                         style: const TextStyle(
-                          fontSize: 9,
+                          fontSize: AppTheme.fontSmall,
                           color: AppTheme.muted,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Expanded(
-                        child: Text(
-                          definition.description,
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.muted,
-                            fontSize: 9.5,
-                            height: 1.35,
-                          ),
+                      Text(
+                        definition.description.trim().isEmpty
+                            ? 'Unavailable'
+                            : definition.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.muted,
+                          fontSize: AppTheme.fontBody,
+                          height: 1.45,
                         ),
                       ),
+                      const SizedBox(height: 12),
                       StatusBadge(
-                        _studentRequirementStatusLabel(record),
+                        _studentRequirementStatusLabel(
+                          record,
+                          locallySubmitted: locallySubmitted,
+                        ),
                         compact: true,
+                        fontSize: AppTheme.fontSmall,
                       ),
                     ],
                   ),
@@ -1661,6 +1554,8 @@ class _SubmissionDetail extends StatelessWidget {
     required this.record,
     required this.user,
     required this.repository,
+    required this.locallySubmitted,
+    required this.onSubmitted,
   });
 
   final RequirementDefinition definition;
@@ -1668,113 +1563,115 @@ class _SubmissionDetail extends StatelessWidget {
   final RequirementRecord? record;
   final AppUser user;
   final PracticumRepository repository;
+  final bool locallySubmitted;
+  final ValueChanged<String> onSubmitted;
+
+  List<RequirementDefinition> get _upcomingDefinitions =>
+      allDefinitions
+          .where(
+            (item) =>
+                item.dueDate.isAfter(DateTime.now()) &&
+                item.id != definition.id,
+          )
+          .toList()
+        ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
       SectionCard(
-        title: definition.title,
+        title: definition.title.trim().isEmpty
+            ? 'Unavailable'
+            : definition.title,
         trailing: StatusBadge(
-          _studentRequirementStatusLabel(record),
+          _studentRequirementStatusLabel(
+            record,
+            locallySubmitted: locallySubmitted,
+          ),
           compact: true,
+          fontSize: AppTheme.fontSmall,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'Due Date: ${shortDate(definition.dueDate)}',
-              style: const TextStyle(fontSize: 9.5, color: AppTheme.muted),
+              style: const TextStyle(
+                fontSize: AppTheme.fontSmall,
+                color: AppTheme.muted,
+              ),
             ),
             const SizedBox(height: 12),
             const Text(
               'Instructions',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: AppTheme.fontBody,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 5),
             Text(
-              definition.instructions.isEmpty
+              definition.instructions.trim().isNotEmpty
+                  ? definition.instructions
+                  : definition.description.trim().isNotEmpty
                   ? definition.description
-                  : definition.instructions,
+                  : 'Unavailable',
               style: const TextStyle(
                 color: AppTheme.muted,
-                fontSize: 9.5,
-                height: 1.4,
+                fontSize: AppTheme.fontBody,
+                height: 1.5,
               ),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                if (definition.officialFormUrl?.isNotEmpty == true)
+            if (definition.pdfTemplate != null)
+              PdfTemplateActions(
+                key: ValueKey(definition.id),
+                template: definition.pdfTemplate!,
+                repository: repository,
+                user: user,
+              )
+            else
+              Row(
+                children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _openUrl(definition.officialFormUrl!),
+                      onPressed:
+                          definition.officialFormUrl?.trim().isNotEmpty == true
+                          ? () => _openUrl(definition.officialFormUrl!.trim())
+                          : null,
                       icon: const Icon(Icons.download_outlined, size: 16),
-                      label: const Text('Download Official Form'),
-                    ),
-                  ),
-                if (definition.officialFormUrl?.isNotEmpty == true &&
-                    definition.sampleFormUrl?.isNotEmpty == true)
-                  const SizedBox(width: 7),
-                if (definition.sampleFormUrl?.isNotEmpty == true)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openUrl(definition.sampleFormUrl!),
-                      icon: const Icon(Icons.visibility_outlined, size: 16),
-                      label: const Text('View Sample Form'),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Upload Your Document',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 7),
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap:
-                  record != null &&
-                      !{
-                        ReviewStatus.needsRevision,
-                        ReviewStatus.rejected,
-                      }.contains(record!.status)
-                  ? null
-                  : () => _pickAndUpload(context),
-              child: Container(
-                height: 92,
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  border: Border.all(color: AppTheme.borderStrong),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.cloud_upload_outlined,
-                      color: AppTheme.blue,
-                      size: 25,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      record == null
-                          ? 'Drag and drop your file here\nor click to browse'
-                          : 'Upload a corrected file',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        color: AppTheme.muted,
+                      label: Text(
+                        definition.officialFormUrl?.trim().isNotEmpty == true
+                            ? 'Download Official Form'
+                            : 'Unavailable',
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          definition.sampleFormUrl?.trim().isNotEmpty == true
+                          ? () => _openUrl(definition.sampleFormUrl!.trim())
+                          : null,
+                      icon: const Icon(Icons.visibility_outlined, size: 16),
+                      label: Text(
+                        definition.sampleFormUrl?.trim().isNotEmpty == true
+                            ? 'View Sample Form'
+                            : 'Unavailable',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 5),
-            const Text(
-              'PDF, Word, PNG or JPG • Max file size: 5 MB',
-              style: TextStyle(fontSize: 8.5, color: AppTheme.muted),
+            const SizedBox(height: 12),
+            _SubmissionUploadPanel(
+              definition: definition,
+              record: record,
+              user: user,
+              repository: repository,
+              locallySubmitted: locallySubmitted,
+              onSubmitted: onSubmitted,
             ),
           ],
         ),
@@ -1783,52 +1680,60 @@ class _SubmissionDetail extends StatelessWidget {
         const SizedBox(height: 10),
         SectionCard(
           title: 'Submission History',
-          child: Column(
-            children: [
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Version ${record!.version}',
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                subtitle: Text(
-                  'Submitted by ${record!.studentName}\n${DateFormat.yMMMd().add_jm().format(record!.submittedAt)}',
-                  style: const TextStyle(fontSize: 9),
-                ),
-                trailing: StatusBadge(
-                  _studentRequirementStatusLabel(record),
-                  compact: true,
-                ),
-                onTap: () => openStorageDocument(
-                  context,
-                  repository,
-                  record!.storagePath,
-                ),
+          child: ListTile(
+            dense: false,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Version ${record!.version}',
+              style: const TextStyle(
+                fontSize: AppTheme.fontBody,
+                fontWeight: FontWeight.w700,
               ),
-              if (record!.remarks?.isNotEmpty == true)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(top: 4),
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF8E8),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    'Coordinator Feedback\n${record!.remarks}',
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 9.3,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-            ],
+            ),
+            subtitle: Text(
+              'Submitted by ${record!.studentName.trim().isEmpty ? 'Unavailable' : record!.studentName}\n'
+              '${DateFormat.yMMMd().add_jm().format(record!.submittedAt)}\n'
+              'File: ${record!.fileName?.trim().isNotEmpty == true ? record!.fileName!.trim() : 'Unavailable'}',
+              style: const TextStyle(fontSize: AppTheme.fontSmall, height: 1.4),
+            ),
+            trailing: StatusBadge(
+              _studentRequirementStatusLabel(record),
+              compact: true,
+              fontSize: AppTheme.fontSmall,
+            ),
+            onTap: record!.storagePath?.trim().isNotEmpty == true
+                ? () => openStorageDocument(
+                    context,
+                    repository,
+                    record!.storagePath,
+                  )
+                : null,
           ),
+        ),
+        const SizedBox(height: 10),
+        SectionCard(
+          title: 'Coordinator Feedback',
+          child: Text(
+            record!.remarks?.trim().isNotEmpty == true
+                ? record!.remarks!.trim()
+                : 'No feedback yet.',
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: AppTheme.fontBody,
+              height: 1.5,
+            ),
+          ),
+        ),
+      ] else ...[
+        const SizedBox(height: 10),
+        const SectionCard(
+          title: 'Submission History',
+          child: Text('No submissions yet.'),
+        ),
+        const SizedBox(height: 10),
+        const SectionCard(
+          title: 'Coordinator Feedback',
+          child: Text('Unavailable until the first submission is reviewed.'),
         ),
       ],
       const SizedBox(height: 10),
@@ -1838,60 +1743,56 @@ class _SubmissionDetail extends StatelessWidget {
           onPressed: () => _showAllDeadlines(context),
           child: const Text('View All'),
         ),
-        child: Column(
-          children:
-              (allDefinitions
-                      .where(
-                        (item) =>
-                            item.dueDate.isAfter(DateTime.now()) &&
-                            item.id != definition.id,
-                      )
-                      .toList()
-                    ..sort((a, b) => a.dueDate.compareTo(b.dueDate)))
-                  .take(4)
-                  .map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 34,
-                            height: 34,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: AppTheme.surfaceSoft,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              DateFormat(
-                                'MMM\ndd',
-                              ).format(item.dueDate).toUpperCase(),
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 8,
-                                height: 1.1,
-                                fontWeight: FontWeight.w700,
+        child: _upcomingDefinitions.isEmpty
+            ? const Text('No upcoming deadlines.')
+            : Column(
+                children: _upcomingDefinitions
+                    .take(4)
+                    .map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceSoft,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                DateFormat(
+                                  'MMM\ndd',
+                                ).format(item.dueDate).toUpperCase(),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontSmall,
+                                  height: 1.15,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w700,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                item.title.trim().isEmpty
+                                    ? 'Unavailable'
+                                    : item.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontSmall,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  )
-                  .toList(),
-        ),
+                    )
+                    .toList(),
+              ),
       ),
     ],
   );
@@ -1932,8 +1833,8 @@ class _SubmissionDetail extends StatelessWidget {
                           ).format(item.dueDate).toUpperCase(),
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            fontSize: 9,
-                            height: 1.05,
+                            fontSize: AppTheme.fontSmall,
+                            height: 1.15,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1954,41 +1855,6 @@ class _SubmissionDetail extends StatelessWidget {
     );
   }
 
-  Future<void> _pickAndUpload(BuildContext context) async {
-    final file = await FilePicker.pickFile(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg'],
-    );
-    if (file == null) return;
-    try {
-      if (record == null) {
-        await repository.submitRequirement(
-          user: user,
-          title: definition.title,
-          definition: definition,
-          file: file,
-        );
-      } else {
-        await repository.resubmitRequirement(
-          user: user,
-          requirement: record!,
-          file: file,
-        );
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Document uploaded successfully.')),
-        );
-      }
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$error')));
-      }
-    }
-  }
-
   Future<void> _openUrl(String value) async {
     await launchUrl(
       Uri.parse(value),
@@ -1998,6 +1864,674 @@ class _SubmissionDetail extends StatelessWidget {
   }
 }
 
+class _SubmissionUploadPanel extends StatefulWidget {
+  const _SubmissionUploadPanel({
+    required this.definition,
+    required this.record,
+    required this.user,
+    required this.repository,
+    required this.locallySubmitted,
+    required this.onSubmitted,
+  });
+
+  final RequirementDefinition definition;
+  final RequirementRecord? record;
+  final AppUser user;
+  final PracticumRepository repository;
+  final bool locallySubmitted;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_SubmissionUploadPanel> createState() => _SubmissionUploadPanelState();
+}
+
+class _SubmissionUploadPanelState extends State<_SubmissionUploadPanel> {
+  static const _allowedExtensions = {
+    'pdf',
+    'doc',
+    'docx',
+    'png',
+    'jpg',
+    'jpeg',
+  };
+  static const _maxFileSize = 5 * 1024 * 1024;
+
+  DropzoneViewController? _dropzoneController;
+  PlatformFile? _stagedFile;
+  Uint8List? _stagedBytes;
+  bool _loadingFile = false;
+  bool _submitting = false;
+  bool _dragging = false;
+  String? _errorMessage;
+  String? _successMessage;
+
+  bool get _canUpload {
+    if (_submitting || _loadingFile) return false;
+    if (widget.record == null) return !widget.locallySubmitted;
+    return {
+      ReviewStatus.needsRevision,
+      ReviewStatus.rejected,
+    }.contains(widget.record!.status);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SubmissionUploadPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.definition.id != widget.definition.id) {
+      _stagedFile = null;
+      _stagedBytes = null;
+      _errorMessage = null;
+      _successMessage = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Text(
+        'Upload Your Document',
+        style: TextStyle(
+          fontSize: AppTheme.fontBody,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 7),
+      if (_submitting)
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceBlue,
+            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: const Row(
+            children: [
+              SizedBox(
+                width: 19,
+                height: 19,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Uploading your document…',
+                  style: TextStyle(
+                    fontSize: AppTheme.fontBody,
+                    color: AppTheme.navy,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        )
+      else if (!_canUpload && _stagedFile == null)
+        _messageCard(
+          icon: Icons.hourglass_top_rounded,
+          message:
+              widget.locallySubmitted ||
+                  widget.record?.status == ReviewStatus.pending ||
+                  widget.record?.status == ReviewStatus.underReview
+              ? 'Your document is submitted and waiting for coordinator review.'
+              : 'You can upload a corrected file when your coordinator requests a revision.',
+          color: AppTheme.sky,
+        )
+      else if (_stagedFile != null)
+        _stagedFileCard()
+      else ...[
+        _dropArea(),
+        const SizedBox(height: 7),
+        OutlinedButton.icon(
+          onPressed: _canUpload ? _chooseFile : null,
+          icon: const Icon(Icons.attach_file, size: 17),
+          label: Text(_loadingFile ? 'Preparing file…' : 'Choose file'),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'PDF, Word, PNG or JPG • Max file size: 5 MB',
+          style: TextStyle(fontSize: AppTheme.fontSmall, color: AppTheme.muted),
+        ),
+      ],
+      if (_errorMessage != null) ...[
+        const SizedBox(height: 8),
+        _messageCard(
+          icon: Icons.error_outline,
+          message: _errorMessage!,
+          color: const Color(0xFFFFF2F0),
+          textColor: AppTheme.danger,
+        ),
+      ],
+      if (_successMessage != null) ...[
+        const SizedBox(height: 8),
+        _messageCard(
+          icon: Icons.check_circle_outline,
+          message: _successMessage!,
+          color: const Color(0xFFEDF8F2),
+          textColor: AppTheme.success,
+        ),
+      ],
+    ],
+  );
+
+  Widget _dropArea() => Container(
+    height: 105,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: _dragging ? AppTheme.sky : AppTheme.surface,
+      border: Border.all(
+        color: _dragging ? AppTheme.blue : AppTheme.borderStrong,
+        width: _dragging ? 1.5 : 1,
+      ),
+      borderRadius: BorderRadius.circular(9),
+    ),
+    child: Stack(
+      children: [
+        if (kIsWeb)
+          Positioned.fill(
+            child: DropzoneView(
+              operation: DragOperation.copy,
+              cursor: CursorType.copy,
+              onCreated: (controller) => _dropzoneController = controller,
+              onHover: () {
+                if (mounted) setState(() => _dragging = true);
+              },
+              onLeave: () {
+                if (mounted) setState(() => _dragging = false);
+              },
+              onDropFile: (file) {
+                if (mounted) {
+                  setState(() => _dragging = false);
+                  unawaited(_handleDroppedFile(file));
+                }
+              },
+              onDropInvalid: (_) {
+                if (mounted) {
+                  setState(() {
+                    _dragging = false;
+                    _errorMessage = 'Choose a PDF, Word, PNG or JPG file.';
+                  });
+                }
+              },
+              onError: (error) {
+                if (mounted && error != null) {
+                  setState(
+                    () => _errorMessage = 'Could not read the dropped file.',
+                  );
+                }
+              },
+            ),
+          ),
+        IgnorePointer(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.cloud_upload_outlined,
+                  color: _dragging ? AppTheme.deepBlue : AppTheme.blue,
+                  size: 30,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  kIsWeb ? 'Drop your file here' : 'Choose a file to stage',
+                  style: const TextStyle(
+                    fontSize: AppTheme.fontBody,
+                    color: AppTheme.muted,
+                  ),
+                ),
+                if (kIsWeb)
+                  const Text(
+                    'You can also use the Choose file button below',
+                    style: TextStyle(
+                      fontSize: AppTheme.fontSmall,
+                      color: AppTheme.muted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _stagedFileCard() {
+    final file = _stagedFile!;
+    final size = _stagedBytes?.length ?? file.lengthSync() ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceBlue,
+        border: Border.all(color: AppTheme.borderStrong),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.insert_drive_file_outlined,
+                color: AppTheme.blue,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: AppTheme.fontSmall,
+                        color: AppTheme.text,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatFileSize(size)} • Ready to review',
+                      style: const TextStyle(
+                        fontSize: AppTheme.fontSmall,
+                        color: AppTheme.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _chooseFile,
+                  icon: const Icon(Icons.swap_horiz, size: 16),
+                  label: const Text('Replace'),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _reviewAndSubmit,
+                  icon: const Icon(Icons.visibility_outlined, size: 16),
+                  label: const Text('Review & submit'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _messageCard({
+    required IconData icon,
+    required String message,
+    required Color color,
+    Color textColor = AppTheme.navy,
+  }) => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 17, color: textColor),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            message,
+            style: TextStyle(
+              fontSize: AppTheme.fontSmall,
+              color: textColor,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _chooseFile() async {
+    if (!_canUpload) return;
+    setState(() {
+      _loadingFile = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+    try {
+      final file = await FilePicker.pickFile(
+        dialogTitle: 'Choose an internship document',
+        type: FileType.custom,
+        allowedExtensions: _allowedExtensions.toList(),
+      );
+      if (file != null) await _stageFile(file);
+    } catch (error) {
+      if (mounted) setState(() => _errorMessage = '$error');
+    } finally {
+      if (mounted) setState(() => _loadingFile = false);
+    }
+  }
+
+  Future<void> _handleDroppedFile(DropzoneFileInterface droppedFile) async {
+    final controller = _dropzoneController;
+    if (controller == null || !_canUpload) return;
+    setState(() {
+      _loadingFile = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+    try {
+      final name = await controller.getFilename(droppedFile);
+      final extension = name.split('.').last.toLowerCase();
+      if (!_allowedExtensions.contains(extension)) {
+        if (mounted) {
+          setState(
+            () => _errorMessage = 'Choose a PDF, Word, PNG or JPG file.',
+          );
+        }
+        return;
+      }
+      final size = await controller.getFileSize(droppedFile);
+      if (size > _maxFileSize) {
+        if (mounted) {
+          setState(
+            () => _errorMessage = 'The file exceeds the 5 MB size limit.',
+          );
+        }
+        return;
+      }
+      final bytes = await controller.getFileData(droppedFile);
+      await _stageFile(_DroppedDocumentPlatformFile(name, bytes));
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _errorMessage = 'Could not read the dropped file: $error',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingFile = false);
+    }
+  }
+
+  Future<void> _stageFile(PlatformFile file) async {
+    final extension = file.extension?.toLowerCase() ?? '';
+    if (!_allowedExtensions.contains(extension)) {
+      if (mounted) {
+        setState(() => _errorMessage = 'Choose a PDF, Word, PNG or JPG file.');
+      }
+      return;
+    }
+
+    final size = await file.length();
+    if (size != null && size > _maxFileSize) {
+      if (mounted) {
+        setState(() => _errorMessage = 'The file exceeds the 5 MB size limit.');
+      }
+      return;
+    }
+
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) {
+      if (mounted) {
+        setState(() => _errorMessage = 'The selected file is empty.');
+      }
+      return;
+    }
+    if (bytes.length > _maxFileSize) {
+      if (mounted) {
+        setState(() => _errorMessage = 'The file exceeds the 5 MB size limit.');
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _stagedFile = file;
+      _stagedBytes = bytes;
+      _loadingFile = false;
+      _errorMessage = null;
+    });
+    await _reviewAndSubmit();
+  }
+
+  Future<void> _reviewAndSubmit() async {
+    final file = _stagedFile;
+    final bytes = _stagedBytes;
+    if (file == null || bytes == null || !_canUpload) return;
+    final shouldSubmit = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820, maxHeight: 680),
+          child: SizedBox(
+            width: 780,
+            height: 620,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.description_outlined,
+                        color: AppTheme.blue,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Review your document',
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.navy,
+                              ),
+                            ),
+                            Text(
+                              '${file.name} • ${_formatFileSize(bytes.length)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: AppTheme.fontSmall,
+                                color: AppTheme.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close preview',
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceSoft,
+                        border: Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: _filePreview(file.name, bytes),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Submitting sends this file to your coordinator for review.',
+                    style: TextStyle(
+                      fontSize: AppTheme.fontSmall,
+                      color: AppTheme.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Keep editing'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        icon: const Icon(Icons.send_outlined, size: 17),
+                        label: const Text('Submit document'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (shouldSubmit == true) await _submitStagedFile(file);
+  }
+
+  Widget _filePreview(String fileName, Uint8List bytes) {
+    final extension = fileName.split('.').last.toLowerCase();
+    if (extension == 'pdf') {
+      return PdfViewer.data(bytes, sourceName: fileName);
+    }
+    if ({'png', 'jpg', 'jpeg'}.contains(extension)) {
+      return InteractiveViewer(
+        minScale: .5,
+        maxScale: 4,
+        child: Center(
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) =>
+                const Center(child: Text('This image preview is unavailable.')),
+          ),
+        ),
+      );
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.description_outlined,
+              size: 46,
+              color: AppTheme.blue,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              fileName,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Word document preview is unavailable here. Confirm to submit this file.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppTheme.muted, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _submitStagedFile(PlatformFile file) async {
+    if (!_canUpload) return;
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+    try {
+      if (widget.record == null) {
+        await widget.repository.submitRequirement(
+          user: widget.user,
+          title: widget.definition.title,
+          definition: widget.definition,
+          file: file,
+        );
+      } else {
+        await widget.repository.resubmitRequirement(
+          user: widget.user,
+          requirement: widget.record!,
+          definitionId: widget.definition.id,
+          file: file,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _stagedFile = null;
+        _stagedBytes = null;
+        _successMessage =
+            'Submitted successfully. Your coordinator can review this document now.';
+      });
+      widget.onSubmitted(widget.definition.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Document submitted. Your coordinator can review it now.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _errorMessage = '$error');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+}
+
+base class _DroppedDocumentPlatformFile extends PlatformFile {
+  _DroppedDocumentPlatformFile(this.name, this._bytes);
+
+  @override
+  final String name;
+  final Uint8List _bytes;
+
+  @override
+  Uri get uri => Uri.parse('memory://document/${Uri.encodeComponent(name)}');
+
+  @override
+  String? get path => null;
+
+  @override
+  XFile get xFile => XFile.fromData(_bytes, name: name);
+
+  @override
+  int? lengthSync() => _bytes.length;
+
+  @override
+  Future<int?> length() async => _bytes.length;
+
+  @override
+  Future<Uint8List> readAsBytes() async => _bytes;
+
+  @override
+  Stream<Uint8List> readAsByteStream() async* {
+    yield _bytes;
+  }
+}
+
+String _formatFileSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
+
 class _SavedRepositoryView {
   const _SavedRepositoryView({
     required this.query,
@@ -2005,6 +2539,7 @@ class _SavedRepositoryView {
     required this.category,
     required this.program,
     required this.tab,
+    required this.folderPath,
   });
 
   final String query;
@@ -2012,6 +2547,7 @@ class _SavedRepositoryView {
   final String category;
   final String program;
   final int tab;
+  final List<String> folderPath;
 }
 
 class DocumentRepositoryScreen extends StatefulWidget {
@@ -2029,6 +2565,37 @@ class DocumentRepositoryScreen extends StatefulWidget {
 }
 
 class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
+  late Stream<List<AppUser>> _roster;
+  late Stream<List<RequirementRecord>> _documents;
+  List<String> _folderPath = [];
+  bool _showFolders = false;
+
+  void _subscribe() {
+    _roster = widget.user.role == UserRole.student
+        ? Stream.value([widget.user])
+        : widget.repository.watchStudentsFor(widget.user);
+    _documents = widget.repository.watchRepositoryDocuments(widget.user);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(DocumentRepositoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != widget.repository ||
+        oldWidget.user.uid != widget.user.uid ||
+        oldWidget.user.role != widget.user.role) {
+      _subscribe();
+      _folderPath = [];
+      _selected = null;
+      _savedView = null;
+    }
+  }
+
   String _query = '';
   ReviewStatus? _status;
   String _category = 'All Categories';
@@ -2052,6 +2619,7 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
         category: _category,
         program: _program,
         tab: _tab,
+        folderPath: _folderPath,
       );
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2071,6 +2639,7 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
       _category = saved.category;
       _program = saved.program;
       _tab = saved.tab;
+      _folderPath = saved.folderPath;
       _selected = null;
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2097,178 +2666,245 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
           label: const Text('Restore View'),
         ),
     ],
-    child: StreamBuilder<List<RequirementRecord>>(
-      stream: widget.repository.watchRequirements(widget.user),
-      builder: (context, snapshot) {
-        final all = snapshot.data ?? const <RequirementRecord>[];
-        final categories = {
-          'All Categories',
-          ...all.map((r) => r.category),
-        }.toList();
-        final programs = {
-          'All Programs',
-          ...all.map((r) => r.program).whereType<String>(),
-        }.toList();
-        final tabFiltered = all.where((record) {
-          return switch (_tab) {
-            1 =>
-              record.status == ReviewStatus.pending ||
-                  record.status == ReviewStatus.underReview,
-            2 => record.status == ReviewStatus.verified,
-            3 => record.status == ReviewStatus.needsRevision,
-            4 => record.archived,
-            _ => !record.archived,
-          };
-        }).toList();
-        final records = tabFiltered.where((record) {
-          final haystack =
-              '${record.title} ${record.fileName} ${record.studentName} ${record.studentNumber} ${record.institutionName}'
-                  .toLowerCase();
-          return (_query.isEmpty || haystack.contains(_query)) &&
-              (_status == null || record.status == _status) &&
-              (_category == 'All Categories' || record.category == _category) &&
-              (_program == 'All Programs' || record.program == _program);
-        }).toList();
-        final selected =
-            _selected != null &&
-                records.any((record) => record.id == _selected!.id)
-            ? records.firstWhere((record) => record.id == _selected!.id)
-            : records.firstOrNull;
-        final counts = [
-          all.where((r) => !r.archived).length,
-          all
-              .where(
-                (r) =>
-                    !r.archived &&
-                    (r.status == ReviewStatus.pending ||
-                        r.status == ReviewStatus.underReview),
-              )
-              .length,
-          all
-              .where((r) => !r.archived && r.status == ReviewStatus.verified)
-              .length,
-          all
-              .where(
-                (r) => !r.archived && r.status == ReviewStatus.needsRevision,
-              )
-              .length,
-          all.where((r) => r.archived).length,
-        ];
+    child: StreamBuilder<List<AppUser>>(
+      stream: _roster,
+      builder: (context, roster) => StreamBuilder<List<RequirementRecord>>(
+        stream: _documents,
+        builder: (context, snapshot) {
+          if (snapshot.hasError || roster.hasError) {
+            return const Center(
+              child: Text('Could not load the document directory.'),
+            );
+          }
+          if (!snapshot.hasData ||
+              !roster.hasData ||
+              snapshot.connectionState == ConnectionState.waiting ||
+              roster.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final directory = RepositoryFolder.build(
+            roster.data!,
+            snapshot.data!,
+          );
+          final chain = directory.resolve(_folderPath);
+          final all = chain.last.documents.toList()
+            ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+          final categories = {
+            'All Categories',
+            ...all.map((r) => r.category),
+          }.toList();
+          final programs = {
+            'All Programs',
+            ...all.map((r) => r.program).whereType<String>(),
+          }.toList();
+          final tabFiltered = all.where((record) {
+            if (record.archived) return _tab == 4;
+            return switch (_tab) {
+              1 =>
+                record.status == ReviewStatus.pending ||
+                    record.status == ReviewStatus.underReview,
+              2 => record.status == ReviewStatus.verified,
+              3 => record.status == ReviewStatus.needsRevision,
+              4 => record.archived,
+              _ => !record.archived,
+            };
+          }).toList();
+          final records = tabFiltered.where((record) {
+            final haystack =
+                '${record.title} ${record.fileName} ${record.studentName} ${record.studentNumber} ${record.institutionName}'
+                    .toLowerCase();
+            return (_query.isEmpty || haystack.contains(_query)) &&
+                (_status == null || record.status == _status) &&
+                (_category == 'All Categories' ||
+                    record.category == _category) &&
+                (_program == 'All Programs' || record.program == _program);
+          }).toList();
+          final selected =
+              _selected != null &&
+                  records.any((record) => record.id == _selected!.id)
+              ? records.firstWhere((record) => record.id == _selected!.id)
+              : records.firstOrNull;
+          final counts = [
+            all.where((r) => !r.archived).length,
+            all
+                .where(
+                  (r) =>
+                      !r.archived &&
+                      (r.status == ReviewStatus.pending ||
+                          r.status == ReviewStatus.underReview),
+                )
+                .length,
+            all
+                .where((r) => !r.archived && r.status == ReviewStatus.verified)
+                .length,
+            all
+                .where(
+                  (r) => !r.archived && r.status == ReviewStatus.needsRevision,
+                )
+                .length,
+            all.where((r) => r.archived).length,
+          ];
 
-        return Column(
-          children: [
-            WorkspaceTabs(
-              labels: const [
-                'All Documents',
-                'For Verification',
-                'Verified',
-                'Needs Revision',
-                'Archived',
-              ],
-              counts: counts,
-              selectedIndex: _tab,
-              onSelected: (value) => setState(() => _tab = value),
-            ),
-            const SizedBox(height: 9),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final list = Column(
-                    children: [
-                      _RepositoryFilters(
-                        queryController: _queryController,
-                        queryChanged: (value) =>
-                            setState(() => _query = value.toLowerCase()),
-                        status: _status,
-                        category: _category,
-                        program: _program,
-                        categories: categories,
-                        programs: programs,
-                        onStatus: (value) => setState(() => _status = value),
-                        onCategory: (value) =>
-                            setState(() => _category = value),
-                        onProgram: (value) => setState(() => _program = value),
-                        onReset: () => setState(() {
-                          _query = '';
-                          _queryController.clear();
-                          _status = null;
-                          _category = 'All Categories';
-                          _program = 'All Programs';
-                        }),
-                      ),
-                      const SizedBox(height: 9),
-                      Expanded(
-                        child: _RepositoryList(
-                          records: records,
-                          selected: selected,
-                          onSelect: (record) =>
-                              setState(() => _selected = record),
-                        ),
-                      ),
-                    ],
-                  );
-                  final details = selected == null
-                      ? const EmptyWorkflowState(
-                          icon: Icons.folder_open_outlined,
-                          title: 'No document selected',
-                          message: 'Select a document to view its details.',
-                        )
-                      : _RepositoryDetails(
-                          record: selected,
-                          repository: widget.repository,
-                        );
-                  if (constraints.maxWidth >= 1180) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: 205,
-                          child: _RepositoryDirectory(
-                            records: all,
-                            activeCategory: _category,
-                            onCategory: (value) =>
-                                setState(() => _category = value),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(child: list),
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          width: 315,
-                          child: SingleChildScrollView(child: details),
-                        ),
-                      ],
-                    );
-                  }
-                  if (constraints.maxWidth >= 850) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(flex: 7, child: list),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 3,
-                          child: SingleChildScrollView(child: details),
-                        ),
-                      ],
-                    );
-                  }
-                  return Column(
-                    children: [
-                      Expanded(child: list),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        height: 360,
-                        child: SingleChildScrollView(child: details),
-                      ),
-                    ],
-                  );
-                },
+          return Column(
+            children: [
+              WorkspaceTabs(
+                labels: const [
+                  'All Documents',
+                  'For Verification',
+                  'Verified',
+                  'Needs Revision',
+                  'Archived',
+                ],
+                counts: counts,
+                selectedIndex: _tab,
+                onSelected: (value) => setState(() => _tab = value),
               ),
-            ),
-          ],
-        );
-      },
+              const SizedBox(height: 9),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final folders = RepositoryDirectory(
+                      chain: chain,
+                      onSelect: (path) => setState(() {
+                        _folderPath = path;
+                        _category = 'All Categories';
+                        _program = 'All Programs';
+                        _selected = null;
+                      }),
+                    );
+                    final narrow = constraints.maxWidth < 850;
+                    final list = Column(
+                      children: [
+                        if (constraints.maxWidth < 1180)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () =>
+                                  setState(() => _showFolders = !_showFolders),
+                              icon: Icon(
+                                _showFolders
+                                    ? Icons.list
+                                    : Icons.folder_rounded,
+                              ),
+                              label: Text(
+                                _showFolders
+                                    ? 'Show documents'
+                                    : 'Folders / ${chain.last.label}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        if (constraints.maxWidth < 1180 && _showFolders)
+                          Expanded(child: folders)
+                        else ...[
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: constraints.maxHeight * 0.4,
+                            ),
+                            child: SingleChildScrollView(
+                              child: _RepositoryFilters(
+                                queryController: _queryController,
+                                queryChanged: (value) => setState(
+                                  () => _query = value.toLowerCase(),
+                                ),
+                                status: _status,
+                                category: _category,
+                                program: _program,
+                                categories: categories,
+                                programs: programs,
+                                onStatus: (value) =>
+                                    setState(() => _status = value),
+                                onCategory: (value) =>
+                                    setState(() => _category = value),
+                                onProgram: (value) =>
+                                    setState(() => _program = value),
+                                onReset: () => setState(() {
+                                  _folderPath = [];
+                                  _query = '';
+                                  _queryController.clear();
+                                  _status = null;
+                                  _category = 'All Categories';
+                                  _program = 'All Programs';
+                                }),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 9),
+                          Expanded(
+                            child: _RepositoryList(
+                              compact: constraints.maxWidth < 600,
+                              records: records,
+                              selected: selected,
+                              onSelect: (record) {
+                                setState(() => _selected = record);
+                                if (narrow) {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    builder: (_) => FractionallySizedBox(
+                                      heightFactor: 0.8,
+                                      child: SingleChildScrollView(
+                                        child: _RepositoryDetails(
+                                          record: record,
+                                          repository: widget.repository,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                    final details = selected == null
+                        ? const EmptyWorkflowState(
+                            icon: Icons.folder_open_outlined,
+                            title: 'No document selected',
+                            message: 'Select a document to view its details.',
+                          )
+                        : _RepositoryDetails(
+                            record: selected,
+                            repository: widget.repository,
+                          );
+                    if (constraints.maxWidth >= 1180) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(width: 246, child: folders),
+                          const SizedBox(width: 10),
+                          Expanded(child: list),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 315,
+                            child: SingleChildScrollView(child: details),
+                          ),
+                        ],
+                      );
+                    }
+                    if (constraints.maxWidth >= 850) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(flex: 7, child: list),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 3,
+                            child: SingleChildScrollView(child: details),
+                          ),
+                        ],
+                      );
+                    }
+                    return list;
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     ),
   );
 }
@@ -2391,106 +3027,15 @@ class _RepositoryFilters extends StatelessWidget {
   );
 }
 
-class _RepositoryDirectory extends StatelessWidget {
-  const _RepositoryDirectory({
-    required this.records,
-    required this.activeCategory,
-    required this.onCategory,
-  });
-
-  final List<RequirementRecord> records;
-  final String activeCategory;
-  final ValueChanged<String> onCategory;
-
-  @override
-  Widget build(BuildContext context) {
-    final programs = <String, Map<String, int>>{};
-    for (final record in records) {
-      final program = record.program ?? 'Other Programs';
-      final categories = programs.putIfAbsent(program, () => <String, int>{});
-      categories[record.category] = (categories[record.category] ?? 0) + 1;
-    }
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: Text(
-              'File Directory',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              children: [
-                ListTile(
-                  dense: true,
-                  visualDensity: const VisualDensity(vertical: -3),
-                  leading: const Icon(Icons.folder_outlined, size: 17),
-                  title: const Text(
-                    'All Documents',
-                    style: TextStyle(fontSize: 10.5),
-                  ),
-                  selected: activeCategory == 'All Categories',
-                  onTap: () => onCategory('All Categories'),
-                ),
-                ...programs.entries.map(
-                  (program) => ExpansionTile(
-                    dense: true,
-                    initiallyExpanded: true,
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-                    childrenPadding: const EdgeInsets.only(left: 16),
-                    leading: const Icon(Icons.folder_open_outlined, size: 16),
-                    title: Text(
-                      program.key,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    children: program.value.entries
-                        .map(
-                          (category) => ListTile(
-                            dense: true,
-                            visualDensity: const VisualDensity(vertical: -3),
-                            leading: const Icon(
-                              Icons.folder_outlined,
-                              size: 15,
-                            ),
-                            title: Text(
-                              category.key,
-                              style: const TextStyle(fontSize: 9.5),
-                            ),
-                            trailing: Text(
-                              '${category.value}',
-                              style: const TextStyle(fontSize: 8.5),
-                            ),
-                            selected: activeCategory == category.key,
-                            onTap: () => onCategory(category.key),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _RepositoryList extends StatelessWidget {
   const _RepositoryList({
     required this.records,
+    required this.compact,
     required this.selected,
     required this.onSelect,
   });
 
+  final bool compact;
   final List<RequirementRecord> records;
   final RequirementRecord? selected;
   final ValueChanged<RequirementRecord> onSelect;
@@ -2502,6 +3047,26 @@ class _RepositoryList extends StatelessWidget {
             icon: Icons.folder_off_outlined,
             title: 'No matching documents',
             message: 'Adjust the repository filters.',
+          )
+        : compact
+        ? ListView.separated(
+            itemCount: records.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final record = records[i];
+              return ListTile(
+                leading: const Icon(
+                  Icons.description_outlined,
+                  color: AppTheme.blue,
+                ),
+                title: Text(record.fileName ?? record.title),
+                subtitle: Text(
+                  '${record.studentName} / ${record.status.label}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => onSelect(record),
+              );
+            },
           )
         : Column(
             children: [
@@ -2589,7 +3154,7 @@ class _RepositoryList extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        fontSize: 9.8,
+                                        fontSize: AppTheme.fontCaption,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -2643,14 +3208,17 @@ class _RepositoryList extends StatelessWidget {
                     Text(
                       '${records.length} document${records.length == 1 ? '' : 's'}',
                       style: const TextStyle(
-                        fontSize: 9,
+                        fontSize: AppTheme.fontCaption,
                         color: AppTheme.muted,
                       ),
                     ),
                     const Spacer(),
                     const Text(
                       'Rows per page  10',
-                      style: TextStyle(fontSize: 9, color: AppTheme.muted),
+                      style: TextStyle(
+                        fontSize: AppTheme.fontCaption,
+                        color: AppTheme.muted,
+                      ),
                     ),
                   ],
                 ),
@@ -2660,7 +3228,7 @@ class _RepositoryList extends StatelessWidget {
   );
 
   static const TextStyle _headerStyle = TextStyle(
-    fontSize: 8.8,
+    fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
   );
@@ -2669,7 +3237,10 @@ class _RepositoryList extends StatelessWidget {
     value,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
-    style: const TextStyle(fontSize: 9.2, color: AppTheme.text),
+    style: const TextStyle(
+      fontSize: AppTheme.fontCaption,
+      color: AppTheme.text,
+    ),
   );
 }
 
@@ -2710,14 +3281,14 @@ class _RepositoryDetails extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 10.5,
+                      fontSize: AppTheme.fontCaption,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
                     'PDF Document • Version ${record.version}',
                     style: const TextStyle(
-                      fontSize: 8.8,
+                      fontSize: AppTheme.fontCaption,
                       color: AppTheme.muted,
                     ),
                   ),
@@ -2770,7 +3341,10 @@ class _RepositoryDetails extends StatelessWidget {
         const Divider(height: 22),
         const Text(
           'Document Information',
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: AppTheme.fontCaption,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 5),
         InfoRow('Student', record.studentName, labelWidth: 80),
@@ -2788,7 +3362,10 @@ class _RepositoryDetails extends StatelessWidget {
                 width: 80,
                 child: Text(
                   'Status',
-                  style: TextStyle(fontSize: 10, color: AppTheme.muted),
+                  style: TextStyle(
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.muted,
+                  ),
                 ),
               ),
               StatusBadge(record.status.label, compact: true),
@@ -2799,13 +3376,16 @@ class _RepositoryDetails extends StatelessWidget {
           const Divider(height: 22),
           const Text(
             'Coordinator Remarks',
-            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              fontSize: AppTheme.fontCaption,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 5),
           Text(
             record.remarks!,
             style: const TextStyle(
-              fontSize: 9.5,
+              fontSize: AppTheme.fontCaption,
               color: AppTheme.muted,
               height: 1.35,
             ),
@@ -2814,7 +3394,10 @@ class _RepositoryDetails extends StatelessWidget {
         const Divider(height: 22),
         const Text(
           'Version History',
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: AppTheme.fontCaption,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         StreamBuilder<List<RequirementVersionRecord>>(
           stream: repository.watchRequirementVersions(record.id),
@@ -2834,13 +3417,13 @@ class _RepositoryDetails extends StatelessWidget {
                   title: Text(
                     'v${record.version}',
                     style: const TextStyle(
-                      fontSize: 9.5,
+                      fontSize: AppTheme.fontCaption,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   subtitle: Text(
                     '${shortDate(record.submittedAt)} • Current',
-                    style: const TextStyle(fontSize: 8.5),
+                    style: const TextStyle(fontSize: AppTheme.fontCaption),
                   ),
                 ),
                 ...versions
@@ -2856,17 +3439,23 @@ class _RepositoryDetails extends StatelessWidget {
                         ),
                         title: Text(
                           'v${version.version}',
-                          style: const TextStyle(fontSize: 9.5),
+                          style: const TextStyle(
+                            fontSize: AppTheme.fontCaption,
+                          ),
                         ),
                         subtitle: Text(
                           shortDate(version.submittedAt),
-                          style: const TextStyle(fontSize: 8.5),
+                          style: const TextStyle(
+                            fontSize: AppTheme.fontCaption,
+                          ),
                         ),
-                        onTap: () => openStorageDocument(
-                          context,
-                          repository,
-                          version.storagePath,
-                        ),
+                        onTap: version.storagePath.isEmpty
+                            ? null
+                            : () => openStorageDocument(
+                                context,
+                                repository,
+                                version.storagePath,
+                              ),
                       ),
                     ),
               ],
@@ -2939,16 +3528,22 @@ class _RepositoryDetails extends StatelessWidget {
                               : version.fileName,
                         ),
                         subtitle: Text(
-                          DateFormat.yMMMd().add_jm().format(
-                            version.submittedAt,
-                          ),
+                          version.submittedAt == null
+                              ? 'Submission date unavailable'
+                              : DateFormat.yMMMd().add_jm().format(
+                                  version.submittedAt!,
+                                ),
                         ),
-                        trailing: const Icon(Icons.open_in_new, size: 18),
-                        onTap: () => openStorageDocument(
-                          context,
-                          repository,
-                          version.storagePath,
-                        ),
+                        trailing: version.storagePath.isEmpty
+                            ? const Text('File unavailable')
+                            : const Icon(Icons.open_in_new, size: 18),
+                        onTap: version.storagePath.isEmpty
+                            ? null
+                            : () => openStorageDocument(
+                                context,
+                                repository,
+                                version.storagePath,
+                              ),
                       ),
                     ),
                 ],
@@ -3284,14 +3879,14 @@ class _ReviewList extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontSize: 9.8,
+                                      fontSize: AppTheme.fontCaption,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                   Text(
                                     record.studentNumber ?? '',
                                     style: const TextStyle(
-                                      fontSize: 8.5,
+                                      fontSize: AppTheme.fontCaption,
                                       color: AppTheme.muted,
                                     ),
                                   ),
@@ -3333,7 +3928,7 @@ class _ReviewList extends StatelessWidget {
   );
 
   static const TextStyle _reviewHeader = TextStyle(
-    fontSize: 8.8,
+    fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
   );
@@ -3342,7 +3937,7 @@ class _ReviewList extends StatelessWidget {
     value,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
-    style: const TextStyle(fontSize: 9.2),
+    style: const TextStyle(fontSize: AppTheme.fontCaption),
   );
 }
 
@@ -3365,12 +3960,17 @@ class _ReviewDetail extends StatefulWidget {
 
 class _ReviewDetailState extends State<_ReviewDetail> {
   int _tab = 0;
+  String? _previewPath;
+  Future<String>? _previewUrlFuture;
 
   @override
   void didUpdateWidget(covariant _ReviewDetail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.record.id != widget.record.id) {
+    if (oldWidget.record.id != widget.record.id ||
+        oldWidget.record.storagePath != widget.record.storagePath) {
       _tab = 0;
+      _previewPath = null;
+      _previewUrlFuture = null;
     }
   }
 
@@ -3383,7 +3983,10 @@ class _ReviewDetailState extends State<_ReviewDetail> {
       children: [
         Text(
           '${widget.record.studentName}   ${widget.record.studentNumber ?? ''}',
-          style: const TextStyle(fontSize: 9.5, color: AppTheme.muted),
+          style: const TextStyle(
+            fontSize: AppTheme.fontCaption,
+            color: AppTheme.muted,
+          ),
         ),
         const SizedBox(height: 7),
         WorkspaceTabs(
@@ -3453,102 +4056,200 @@ class _ReviewDetailState extends State<_ReviewDetail> {
     _ => _documentPreview(context),
   };
 
-  Widget _documentPreview(BuildContext context) => Container(
-    height: 245,
-    decoration: BoxDecoration(
-      color: AppTheme.surfaceSoft,
-      border: Border.all(color: AppTheme.border),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Column(
-      children: [
-        Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: AppTheme.border)),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.description_outlined,
-                size: 14,
-                color: AppTheme.muted,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  widget.record.fileName ?? 'Submitted document',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Open document',
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                onPressed: () => openStorageDocument(
-                  context,
-                  widget.repository,
-                  widget.record.storagePath,
-                ),
-                icon: const Icon(Icons.open_in_new, size: 14),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Center(
-            child: Container(
-              width: 250,
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(18),
+  Widget _documentPreview(BuildContext context) {
+    final fileName = widget.record.fileName?.trim().isNotEmpty == true
+        ? widget.record.fileName!.trim()
+        : 'Submitted document';
+    final storagePath = widget.record.storagePath?.trim() ?? '';
+    final extension = fileName.split('.').last.toLowerCase();
+    final canPreviewInline = {'pdf', 'png', 'jpg', 'jpeg'}.contains(extension);
+
+    return Container(
+      height: 320,
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceSoft,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: const BoxDecoration(
               color: Colors.white,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.record.title.toUpperCase(),
-                    maxLines: 2,
+              border: Border(bottom: BorderSide(color: AppTheme.border)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.description_outlined,
+                  size: 17,
+                  color: AppTheme.muted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    fileName,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+                      fontSize: AppTheme.fontSmall,
+                      color: AppTheme.muted,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Container(height: 6, width: 170, color: AppTheme.border),
-                  const SizedBox(height: 7),
-                  Container(
-                    height: 5,
-                    width: double.infinity,
-                    color: AppTheme.border,
-                  ),
-                  const SizedBox(height: 5),
-                  Container(height: 5, width: 210, color: AppTheme.border),
-                  const Spacer(),
-                  Align(
-                    alignment: Alignment.center,
-                    child: OutlinedButton.icon(
-                      onPressed: widget.record.storagePath?.isNotEmpty == true
-                          ? () => openStorageDocument(
-                              context,
-                              widget.repository,
-                              widget.record.storagePath,
-                            )
-                          : null,
-                      icon: const Icon(Icons.visibility_outlined, size: 14),
-                      label: const Text('Open full document'),
+                ),
+                IconButton(
+                  tooltip: 'Open full document',
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: storagePath.isEmpty
+                      ? null
+                      : () => openStorageDocument(
+                          context,
+                          widget.repository,
+                          storagePath,
+                        ),
+                  icon: const Icon(Icons.open_in_new, size: 17),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: storagePath.isEmpty
+                ? _previewMessage(
+                    title: 'No uploaded file',
+                    message: 'This submission has no storage file attached.',
+                  )
+                : !canPreviewInline
+                ? _previewMessage(
+                    title: 'Inline preview unavailable',
+                    message:
+                        'This file type can be opened or downloaded, but this browser does not preview it here.',
+                    action: OutlinedButton.icon(
+                      onPressed: () => openStorageDocument(
+                        context,
+                        widget.repository,
+                        storagePath,
+                      ),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('Open document'),
                     ),
-                  ),
+                  )
+                : _loadInlinePreview(storagePath, isPdf: extension == 'pdf'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String> _signedPreviewUrl(String storagePath) {
+    if (_previewUrlFuture == null || _previewPath != storagePath) {
+      _previewPath = storagePath;
+      _previewUrlFuture = widget.repository.createDownloadUrl(storagePath);
+    }
+    return _previewUrlFuture!;
+  }
+
+  Widget _loadInlinePreview(String storagePath, {required bool isPdf}) =>
+      FutureBuilder<String>(
+        future: _signedPreviewUrl(storagePath),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Preparing secure preview…'),
                 ],
+              ),
+            );
+          }
+          final url = snapshot.data;
+          if (snapshot.hasError || url == null || url.isEmpty) {
+            return _previewFailure(
+              storagePath,
+              snapshot.error?.toString() ??
+                  'Could not access the uploaded file.',
+            );
+          }
+          if (isPdf) {
+            return PdfViewer.uri(
+              Uri.parse(url),
+              key: ValueKey(url),
+              params: PdfViewerParams(
+                errorBannerBuilder: (_, _, _, _) =>
+                    _previewFailure(storagePath, 'Could not display this PDF.'),
+              ),
+            );
+          }
+          return Image.network(
+            url,
+            key: ValueKey(url),
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) =>
+                _previewFailure(storagePath, 'Could not display this image.'),
+          );
+        },
+      );
+
+  Widget _previewFailure(String storagePath, String message) => _previewMessage(
+    title: 'Could not load preview',
+    message: message,
+    action: Wrap(
+      spacing: 8,
+      children: [
+        OutlinedButton(
+          onPressed: () => setState(() => _previewUrlFuture = null),
+          child: const Text('Retry'),
+        ),
+        TextButton(
+          onPressed: () =>
+              openStorageDocument(context, widget.repository, storagePath),
+          child: const Text('Open document'),
+        ),
+      ],
+    ),
+  );
+
+  Widget _previewMessage({
+    required String title,
+    required String message,
+    Widget? action,
+  }) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.text,
+              fontSize: AppTheme.fontBody,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: AppTheme.fontSmall,
+                  height: 1.4,
+                ),
               ),
             ),
           ),
-        ),
-      ],
+          if (action != null) ...[const SizedBox(height: 10), action],
+        ],
+      ),
     ),
   );
 
@@ -3607,7 +4308,10 @@ class _ReviewDetailState extends State<_ReviewDetail> {
             child: Text(
               'Unable to load version history: ${snapshot.error}',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 10, color: AppTheme.muted),
+              style: const TextStyle(
+                fontSize: AppTheme.fontCaption,
+                color: AppTheme.muted,
+              ),
             ),
           );
         }
@@ -3640,7 +4344,7 @@ class _ReviewDetailState extends State<_ReviewDetail> {
   Widget _historyTile({
     required int version,
     required String fileName,
-    required DateTime date,
+    required DateTime? date,
     required String status,
     required bool current,
   }) => Container(
@@ -3662,7 +4366,7 @@ class _ReviewDetailState extends State<_ReviewDetail> {
               Text(
                 'Version $version${current ? ' • Current' : ''}',
                 style: const TextStyle(
-                  fontSize: 9.5,
+                  fontSize: AppTheme.fontCaption,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -3670,7 +4374,10 @@ class _ReviewDetailState extends State<_ReviewDetail> {
                 fileName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 9, color: AppTheme.muted),
+                style: const TextStyle(
+                  fontSize: AppTheme.fontCaption,
+                  color: AppTheme.muted,
+                ),
               ),
             ],
           ),
@@ -3681,12 +4388,15 @@ class _ReviewDetailState extends State<_ReviewDetail> {
           children: [
             Text(
               shortDate(date),
-              style: const TextStyle(fontSize: 8.5, color: AppTheme.muted),
+              style: const TextStyle(
+                fontSize: AppTheme.fontCaption,
+                color: AppTheme.muted,
+              ),
             ),
             Text(
               status,
               style: const TextStyle(
-                fontSize: 8.5,
+                fontSize: AppTheme.fontCaption,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -3704,7 +4414,7 @@ class _ReviewDetailState extends State<_ReviewDetail> {
             ? widget.record.remarks!
             : 'No coordinator feedback has been saved for this submission yet.',
         style: const TextStyle(
-          fontSize: 10.2,
+          fontSize: AppTheme.fontCaption,
           color: AppTheme.muted,
           height: 1.45,
         ),
@@ -3745,7 +4455,10 @@ class _DetailHeading extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 10),
     child: Text(
       text,
-      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+      style: const TextStyle(
+        fontSize: AppTheme.fontSmall,
+        fontWeight: FontWeight.w800,
+      ),
     ),
   );
 }
@@ -3842,12 +4555,16 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
     final program = TextEditingController(
       text: existing?.program ?? 'All Programs',
     );
-    final officialForm = TextEditingController(text: existing?.officialFormUrl);
-    final sampleForm = TextEditingController(text: existing?.sampleFormUrl);
+    final pdfTemplate = PdfTemplateEditorController(
+      template: existing?.pdfTemplate,
+    );
+    var saving = false;
+    String? saveError;
     var dueDate =
         existing?.dueDate ?? DateTime.now().add(const Duration(days: 30));
     await showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(
@@ -3855,136 +4572,159 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
           ),
           content: SizedBox(
             width: 640,
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  TextField(
-                    controller: title,
-                    decoration: const InputDecoration(
-                      labelText: 'Requirement title',
+            child: AbsorbPointer(
+              absorbing: saving,
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: title,
+                      decoration: const InputDecoration(
+                        labelText: 'Requirement title',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: description,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Short description',
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: description,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Short description',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: instructions,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Submission instructions',
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: instructions,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Submission instructions',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: category,
-                          decoration: const InputDecoration(
-                            labelText: 'Category',
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: category,
+                            decoration: const InputDecoration(
+                              labelText: 'Category',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: program,
+                            decoration: const InputDecoration(
+                              labelText: 'Program',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    PdfTemplateEditor(
+                      controller: pdfTemplate,
+                      repository: repository,
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.calendar_month_outlined),
+                      label: Text('Due date: ${shortDate(dueDate)}'),
+                      onPressed: () async {
+                        final selected = await showDatePicker(
+                          context: context,
+                          firstDate: DateTime.now().subtract(
+                            const Duration(days: 365),
+                          ),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 3650),
+                          ),
+                          initialDate: dueDate,
+                        );
+                        if (selected != null) {
+                          setDialogState(() => dueDate = selected);
+                        }
+                      },
+                    ),
+                    if (saveError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          saveError!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: program,
-                          decoration: const InputDecoration(
-                            labelText: 'Program',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: officialForm,
-                          decoration: const InputDecoration(
-                            labelText: 'Official form URL',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: sampleForm,
-                          decoration: const InputDecoration(
-                            labelText: 'Sample form URL',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_month_outlined),
-                    label: Text('Due date: ${shortDate(dueDate)}'),
-                    onPressed: () async {
-                      final selected = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now().subtract(
-                          const Duration(days: 365),
-                        ),
-                        lastDate: DateTime.now().add(
-                          const Duration(days: 3650),
-                        ),
-                        initialDate: dueDate,
-                      );
-                      if (selected != null) {
-                        setDialogState(() => dueDate = selected);
-                      }
-                    },
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () async {
-                await repository.saveRequirementDefinition(
-                  actor: user,
-                  id: existing?.id,
-                  title: title.text,
-                  description: description.text,
-                  instructions: instructions.text,
-                  category: category.text,
-                  dueDate: dueDate,
-                  program: program.text,
-                  officialFormUrl: officialForm.text,
-                  sampleFormUrl: sampleForm.text,
-                );
-                if (dialogContext.mounted) {
-                  Navigator.pop(dialogContext);
-                }
-              },
-              child: const Text('Save requirement'),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        saving = true;
+                        saveError = null;
+                      });
+                      try {
+                        if (title.text.trim().isEmpty ||
+                            category.text.trim().isEmpty) {
+                          throw ArgumentError(
+                            'Requirement title and category are required.',
+                          );
+                        }
+                        final template = await pdfTemplate.persist(
+                          repository,
+                          user,
+                        );
+                        await repository.saveRequirementDefinition(
+                          actor: user,
+                          id: existing?.id,
+                          title: title.text,
+                          description: description.text,
+                          instructions: instructions.text,
+                          category: category.text,
+                          dueDate: dueDate,
+                          program: program.text,
+                          officialFormUrl: existing?.officialFormUrl,
+                          sampleFormUrl: existing?.sampleFormUrl,
+                          pdfTemplate: template,
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => saveError = error.toString());
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => saving = false);
+                        }
+                      }
+                    },
+              child: Text(saving ? 'Saving…' : 'Save requirement'),
             ),
           ],
         ),
       ),
     );
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    pdfTemplate.dispose();
     for (final controller in [
       title,
       description,
       instructions,
       category,
       program,
-      officialForm,
-      sampleForm,
     ]) {
       controller.dispose();
     }

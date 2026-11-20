@@ -2,7 +2,11 @@
   "name": "practicum-connect-web-services",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test:pdf-templates": "node --test tools/pdf_template_test.mjs"
+  },
   "dependencies": {
-    "firebase-admin": "^13.0.0"
+    "firebase-admin": "^13.0.0",
+    "pdf-lib": "1.17.1"
   }
 }

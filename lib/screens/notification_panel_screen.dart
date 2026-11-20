@@ -6,6 +6,7 @@ import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
 import 'document_workflow_screens.dart';
+import 'student_profile_screen.dart';
 import 'workflow_shared.dart';
 
 class StudentNotificationPanelScreen extends StatefulWidget {
@@ -30,6 +31,16 @@ class _StudentNotificationPanelScreenState
   String _dateFilter = 'All Dates';
   int _tab = 0;
   NotificationRecord? _selected;
+
+  Future<void> _selectNotification(NotificationRecord notice) async {
+    setState(() => _selected = notice);
+    if (!notice.isReadBy(widget.user.uid)) {
+      await widget.repository.markNotificationRead(
+        user: widget.user,
+        notification: notice,
+      );
+    }
+  }
 
   Future<void> _openNotification(NotificationRecord notice) async {
     setState(() => _selected = notice);
@@ -99,9 +110,7 @@ class _StudentNotificationPanelScreenState
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to delete notification: $error'),
-        ),
+        SnackBar(content: Text('Unable to delete notification: $error')),
       );
     }
   }
@@ -140,7 +149,7 @@ class _StudentNotificationPanelScreenState
             '${notice.title} ${notice.message}'.toLowerCase().contains(_query);
         final typeMatches = _type == 'all' || notice.type == _type;
         final now = DateTime.now();
-        final created = notice.createdAt;
+        final created = notice.deliveryTime;
         final dateMatches = switch (_dateFilter) {
           'Today' =>
             created.year == now.year &&
@@ -168,10 +177,8 @@ class _StudentNotificationPanelScreenState
             ? 'View internship updates, reminders, document feedback, and deadlines.'
             : 'View assigned-intern submissions, status changes, DTR updates, and evaluation notices.',
         eyebrow: 'Home  ›  Notifications',
-        actions: [
-          StatusBadge('${unread.length} unread notifications', compact: true),
-        ],
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -208,9 +215,10 @@ class _StudentNotificationPanelScreenState
               ],
             ),
             const SizedBox(height: 12),
-            Card(
+            Align(
+              alignment: Alignment.centerLeft,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Wrap(
                   spacing: 10,
                   runSpacing: 10,
@@ -240,6 +248,8 @@ class _StudentNotificationPanelScreenState
                                   'general': 'General',
                                   'document_feedback': 'Document Feedback',
                                   'deadline': 'Deadline',
+                                  'verification_reminder':
+                                      'Verification reminder',
                                   'status_update': 'Status Update',
                                   'document_submission': 'Document Submission',
                                   'dtr_submission': 'DTR Submission',
@@ -298,7 +308,9 @@ class _StudentNotificationPanelScreenState
                     records: records,
                     user: widget.user,
                     selected: selected,
-                    onSelect: _openNotification,
+                    onSelect: constraints.maxWidth < 960
+                        ? _openNotification
+                        : _selectNotification,
                     onView: _openNotification,
                     onDelete: _deleteNotificationForMe,
                   );
@@ -314,23 +326,12 @@ class _StudentNotificationPanelScreenState
                           notice: selected,
                           repository: widget.repository,
                         );
-                  if (constraints.maxWidth < 900) {
-                    return Column(
-                      children: [
-                        Expanded(child: list),
-                        const SizedBox(height: 9),
-                        SizedBox(
-                          height: 340,
-                          child: SingleChildScrollView(child: details),
-                        ),
-                      ],
-                    );
-                  }
+                  if (constraints.maxWidth < 960) return list;
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(flex: 6, child: list),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 20),
                       Expanded(
                         flex: 4,
                         child: SingleChildScrollView(child: details),
@@ -388,8 +389,8 @@ class _NotificationList extends StatelessWidget {
                       ? AppTheme.surface
                       : Colors.white,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 11,
+                    horizontal: 16,
+                    vertical: 16,
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -408,7 +409,7 @@ class _NotificationList extends StatelessWidget {
                       const SizedBox(width: 10),
                       Icon(
                         _noticeIcon(notice.type),
-                        size: 17,
+                        size: 21,
                         color: unread ? AppTheme.blue : AppTheme.muted,
                       ),
                       const SizedBox(width: 10),
@@ -416,48 +417,39 @@ class _NotificationList extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    notice.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: unread
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                _TypePill(type: notice.type),
-                              ],
+                            Text(
+                              notice.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: unread
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                              ),
                             ),
-                            const SizedBox(height: 3),
+                            const SizedBox(height: 6),
                             Text(
                               notice.message,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: AppTheme.muted,
-                                fontSize: 9.3,
-                                height: 1.25,
+                                fontSize: AppTheme.fontSmall,
+                                height: 1.45,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              DateFormat.MMMd().add_jm().format(
+                                notice.deliveryTime,
+                              ),
+                              style: const TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: AppTheme.fontCaption,
                               ),
                             ),
                           ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 78,
-                        child: Text(
-                          DateFormat.MMMd().add_jm().format(notice.createdAt),
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            color: AppTheme.muted,
-                            fontSize: 8.5,
-                          ),
                         ),
                       ),
                       const SizedBox(width: 5),
@@ -483,10 +475,7 @@ class _NotificationList extends StatelessWidget {
                             value: 'view',
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.visibility_outlined,
-                                  size: 18,
-                                ),
+                                Icon(Icons.visibility_outlined, size: 18),
                                 SizedBox(width: 10),
                                 Text('View'),
                               ],
@@ -504,9 +493,7 @@ class _NotificationList extends StatelessWidget {
                                 SizedBox(width: 10),
                                 Text(
                                   'Delete',
-                                  style: TextStyle(
-                                    color: AppTheme.danger,
-                                  ),
+                                  style: TextStyle(color: AppTheme.danger),
                                 ),
                               ],
                             ),
@@ -536,15 +523,12 @@ class _NotificationDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppTheme.background,
-    appBar: AppBar(
-      title: const Text('Notification'),
-    ),
+    appBar: AppBar(title: const Text('Notification')),
     body: SafeArea(
       child: StreamBuilder<List<NotificationRecord>>(
         stream: repository.watchNotifications(user),
         builder: (context, snapshot) {
-          final records =
-              snapshot.data ?? const <NotificationRecord>[];
+          final records = snapshot.data ?? const <NotificationRecord>[];
 
           final current = records
               .where((item) => item.id == notice.id)
@@ -570,6 +554,7 @@ class _NotificationDetailPage extends StatelessWidget {
     ),
   );
 }
+
 class _NotificationDetails extends StatelessWidget {
   const _NotificationDetails({
     required this.user,
@@ -584,37 +569,91 @@ class _NotificationDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SectionCard(
     title: notice.title,
-    trailing: StatusBadge(
-      notice.isReadBy(user.uid) ? 'Read' : 'Unread',
-      compact: true,
-    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          DateFormat.yMMMd().add_jm().format(notice.createdAt),
-          style: const TextStyle(color: AppTheme.muted, fontSize: 9),
+          DateFormat.yMMMd().add_jm().format(notice.deliveryTime),
+          style: const TextStyle(
+            color: AppTheme.muted,
+            fontSize: AppTheme.fontCaption,
+          ),
         ),
         const Divider(height: 20),
         InfoRow('From', 'PracticumConnect System', labelWidth: 88),
         InfoRow('Category', _typeLabel(notice.type), labelWidth: 88),
         if (notice.relatedId != null)
-          InfoRow('Related', 'Internship requirement', labelWidth: 88),
+          InfoRow('Related', _relatedLabel(), labelWidth: 88),
         const Divider(height: 20),
         const Text(
           'Message',
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: AppTheme.fontCaption,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 7),
         Text(
           notice.message,
           style: const TextStyle(
             color: AppTheme.muted,
-            fontSize: 9.8,
+            fontSize: AppTheme.fontBody,
             height: 1.45,
           ),
         ),
         const SizedBox(height: 16),
+        if (user.role == UserRole.coordinator &&
+            notice.type == 'assignment' &&
+            notice.relatedId?.isNotEmpty == true) ...[
+          FilledButton.icon(
+            onPressed: () async {
+              try {
+                final student = await repository.getStudentById(
+                  notice.relatedId!,
+                );
+                if (!context.mounted) return;
+                if (student == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Student profile unavailable. Ask the SIP Admin to verify the assignment.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => Scaffold(
+                      backgroundColor: AppTheme.background,
+                      appBar: AppBar(title: const Text('Student Profile')),
+                      body: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: StudentInternshipProfileScreen(
+                          actor: user,
+                          student: student,
+                          repository: repository,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              } catch (_) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Student profile unavailable. Ask the SIP Admin to verify the assignment.',
+                    ),
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.person_search_outlined, size: 16),
+            label: const Text('Open Student Profile'),
+          ),
+          const SizedBox(height: 7),
+        ],
         if (user.role == UserRole.student &&
             notice.relatedId != null &&
             (notice.type == 'document_feedback' ||
@@ -654,7 +693,8 @@ class _NotificationDetails extends StatelessWidget {
           const SizedBox(height: 7),
         ],
         if (user.role == UserRole.coordinator &&
-            (notice.type == 'document_submission' ||
+            (notice.type == 'verification_reminder' ||
+                notice.type == 'document_submission' ||
                 notice.type == 'document_feedback')) ...[
           FilledButton.icon(
             onPressed: () => Navigator.of(context).push(
@@ -697,38 +737,35 @@ class _NotificationDetails extends StatelessWidget {
           ),
           const SizedBox(height: 7),
         ],
-        OutlinedButton.icon(
-          onPressed: () =>
-              repository.markNotificationRead(user: user, notification: notice),
-          icon: const Icon(Icons.mark_email_read_outlined, size: 15),
-          label: const Text('Mark as Read'),
-        ),
+        if (!notice.isReadBy(user.uid))
+          OutlinedButton.icon(
+            onPressed: () => repository.markNotificationRead(
+              user: user,
+              notification: notice,
+            ),
+            icon: const Icon(Icons.mark_email_read_outlined, size: 15),
+            label: const Text('Mark as Read'),
+          ),
       ],
     ),
   );
-}
 
-class _TypePill extends StatelessWidget {
-  const _TypePill({required this.type});
-  final String type;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-    decoration: BoxDecoration(
-      color: AppTheme.surfaceSoft,
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Text(
-      _typeLabel(type),
-      style: const TextStyle(fontSize: 8, color: AppTheme.muted),
-    ),
-  );
+  String _relatedLabel() {
+    if (notice.type != 'assignment') {
+      return 'Internship requirement';
+    }
+    return switch (user.role) {
+      UserRole.coordinator => 'Student intern',
+      UserRole.student => 'Program Coordinator',
+      UserRole.admin => 'Assigned account',
+    };
+  }
 }
 
 IconData _noticeIcon(String type) => switch (type) {
   'document_feedback' || 'document_submission' => Icons.description_outlined,
   'deadline' => Icons.event_outlined,
+  'verification_reminder' => Icons.fact_check_outlined,
   'status_update' => Icons.track_changes_outlined,
   'dtr_submission' || 'dtr_update' => Icons.punch_clock_outlined,
   'assignment' => Icons.group_add_outlined,
@@ -740,6 +777,7 @@ String _typeLabel(String type) => switch (type) {
   'document_feedback' => 'Document Feedback',
   'document_submission' => 'Document Submission',
   'deadline' => 'Deadline',
+  'verification_reminder' => 'Verification reminder',
   'status_update' => 'Status Update',
   'dtr_submission' => 'DTR Submission',
   'dtr_update' => 'DTR Update',

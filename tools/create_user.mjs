@@ -9,11 +9,11 @@ const options = Object.fromEntries(
   }),
 );
 
-const allowedRoles = new Set(['admin', 'coordinator', 'student']);
+const allowedRoles = new Set(['admin', 'coordinator']);
 if (!options.email || !options.password || !options.name || !allowedRoles.has(options.role)) {
   console.error(
     'Usage: node create_user.mjs --email=user@example.com --password=StrongPassword '
-      + '--name="User Name" --role=admin|coordinator|student [--studentNumber=2026-0001]',
+      + '--name="User Name" --role=admin|coordinator [--studentNumber=2026-0001]',
   );
   process.exit(1);
 }

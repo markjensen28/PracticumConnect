@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   initializeTestEnvironment,
@@ -16,7 +17,7 @@ import {
 } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({
-  projectId: 'demo-practicum-connect',
+  projectId: 'demo-rules-' + randomUUID().slice(0,8),
   firestore: {
     host: '127.0.0.1',
     port: 8080,
@@ -36,12 +37,12 @@ try {
 
     await Promise.all([
       setDoc(doc(db, 'users', 'student1'), {
-        role: 'student',
+        role: 'student', enrollmentStatus: 'active',
         active: true,
         coordinatorId: 'coordinator1',
       }),
       setDoc(doc(db, 'users', 'student2'), {
-        role: 'student',
+        role: 'student', enrollmentStatus: 'active',
         active: true,
         coordinatorId: 'coordinator2',
       }),
@@ -93,12 +94,17 @@ try {
     ]);
   });
 
-  const student = env.authenticatedContext('student1').firestore();
-  const otherStudent = env.authenticatedContext('student2').firestore();
+  const student = env.authenticatedContext('student1', {student_enrolled:true,email_verified:true}).firestore();
+  const otherStudent = env.authenticatedContext('student2', {student_enrolled:true,email_verified:true}).firestore();
   const coordinator = env.authenticatedContext('coordinator1').firestore();
   const otherCoordinator =
     env.authenticatedContext('coordinator2').firestore();
   const admin = env.authenticatedContext('admin1').firestore();
+  const outsider = env.authenticatedContext('outsider', {email:'outsider@example.invalid',email_verified:true}).firestore();
+  await assertFails(setDoc(doc(outsider,'users','outsider'),{email:'outsider@example.invalid',displayName:'Fictional User',role:'student',studentNumber:'1001',active:true,approvalStatus:'approved',staffId:null,department:null}));
+  await assertFails(getDoc(doc(env.authenticatedContext('student1',{email_verified:true}).firestore(),'requirement_definitions','cv')));
+  await assertFails(getDoc(doc(env.authenticatedContext('student1',{student_enrolled:true,email_verified:false}).firestore(),'requirement_definitions','cv')));
+
 
   const evaluationPath = ['supervisor_evaluations', 'test-evaluation'];
 

@@ -1,6 +1,7 @@
-import { createStaffEvaluation, getPublicEvaluation, submitPublicEvaluation, verifyPublicEvaluationAccess } from '../tools/evaluation_core.mjs';
+import { handleEvaluationAction, getPublicEvaluation } from '../tools/evaluation_core.mjs';
 
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
   const allowedOrigin = process.env.APP_ORIGIN?.trim();
   if (allowedOrigin) res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -13,21 +14,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = req.method === 'GET'
-      ? await getPublicEvaluation({ token: req.query?.token })
-      : req.method === 'POST'
-        ? (req.body?.action === 'create'
-? await createStaffEvaluation({
-    authorization: req.headers.authorization,
-    body: req.body,
-  })
-: req.body?.action === 'verify'
-            ? await verifyPublicEvaluationAccess({ body: req.body })
-            : await submitPublicEvaluation({ body: req.body }))
-        : { status: 405, payload: { error: 'Method not allowed.' } };
+    let result;
+    if (req.method === 'GET') {
+      result = await getPublicEvaluation({ token: req.query?.token });
+    } else if (req.method === 'POST') {
+      result = await handleEvaluationAction({ authorization: req.headers.authorization, body: req.body });
+    } else {
+      result = { status: 405, payload: { error: 'Method not allowed.' } };
+    }
     res.status(result.status).json(result.payload);
   } catch (error) {
-    res.status(500).json({
+    res.status(error.httpStatus || 500).json({
       error: error instanceof Error ? error.message : String(error),
     });
   }

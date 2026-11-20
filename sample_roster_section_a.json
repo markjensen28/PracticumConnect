@@ -1,0 +1,182 @@
+[
+  {
+    "studentNumber": "SAMPLE-001",
+    "displayName": "Ana Reyes",
+    "email": "sample.student01@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-002",
+    "displayName": "Ben Santos",
+    "email": "sample.student02@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-003",
+    "displayName": "Carla Mendoza",
+    "email": "sample.student03@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-004",
+    "displayName": "Diego Cruz",
+    "email": "sample.student04@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-005",
+    "displayName": "Elena Ramos",
+    "email": "sample.student05@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-006",
+    "displayName": "Felix Garcia",
+    "email": "sample.student06@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-007",
+    "displayName": "Gia Navarro",
+    "email": "sample.student07@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-008",
+    "displayName": "Hugo Castillo",
+    "email": "sample.student08@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-009",
+    "displayName": "Iris Aquino",
+    "email": "sample.student09@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-010",
+    "displayName": "Joel Flores",
+    "email": "sample.student10@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-011",
+    "displayName": "Kara Lim",
+    "email": "sample.student11@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-012",
+    "displayName": "Luis Mercado",
+    "email": "sample.student12@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-013",
+    "displayName": "Mia Rivera",
+    "email": "sample.student13@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-014",
+    "displayName": "Noel Torres",
+    "email": "sample.student14@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-015",
+    "displayName": "Olivia Perez",
+    "email": "sample.student15@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-016",
+    "displayName": "Paolo Dizon",
+    "email": "sample.student16@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-017",
+    "displayName": "Rina Villanueva",
+    "email": "sample.student17@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-018",
+    "displayName": "Sam Bautista",
+    "email": "sample.student18@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-019",
+    "displayName": "Tina Lopez",
+    "email": "sample.student19@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  },
+  {
+    "studentNumber": "SAMPLE-020",
+    "displayName": "Victor Tan",
+    "email": "sample.student20@example.org",
+    "section": "Section A",
+    "yearLevel": "4th Year",
+    "department": "College of Arts and Sciences",
+    "program": "Bachelor of Science in Information Technology"
+  }
+]

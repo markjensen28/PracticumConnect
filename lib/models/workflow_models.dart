@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'pdf_form_template.dart';
 
 enum InternshipStage {
   pendingRequirements,
@@ -46,6 +47,7 @@ class RequirementDefinition {
     this.program = 'All Programs',
     this.officialFormUrl,
     this.sampleFormUrl,
+    this.pdfTemplate,
     this.sortOrder = 0,
     this.active = true,
   });
@@ -59,6 +61,7 @@ class RequirementDefinition {
   final String program;
   final String? officialFormUrl;
   final String? sampleFormUrl;
+  final PdfFormTemplate? pdfTemplate;
   final int sortOrder;
   final bool active;
 
@@ -99,6 +102,11 @@ class RequirementDefinition {
       program: data['program'] as String? ?? 'All Programs',
       officialFormUrl: data['officialFormUrl'] as String?,
       sampleFormUrl: data['sampleFormUrl'] as String?,
+      pdfTemplate: data['pdfTemplate'] is Map
+          ? PdfFormTemplate.fromMap(
+              Map<String, dynamic>.from(data['pdfTemplate'] as Map),
+            )
+          : null,
       sortOrder: (data['sortOrder'] as num?)?.toInt() ?? 0,
       active: data['active'] as bool? ?? true,
     );
@@ -115,6 +123,10 @@ class InternshipProfileRecord {
     this.position = '',
     this.startDate,
     this.endDate,
+    this.shiftStartMinutes,
+    this.shiftEndMinutes,
+    this.workDays = const [],
+    this.timeZone = 'Asia/Manila',
     this.requiredHours = 400,
     this.supervisorName = '',
     this.supervisorEmail = '',
@@ -135,6 +147,10 @@ class InternshipProfileRecord {
   final String position;
   final DateTime? startDate;
   final DateTime? endDate;
+  final int? shiftStartMinutes;
+  final int? shiftEndMinutes;
+  final List<int> workDays;
+  final String timeZone;
   final int requiredHours;
   final String supervisorName;
   final String supervisorEmail;
@@ -146,9 +162,8 @@ class InternshipProfileRecord {
   final DateTime? completedAt;
   final DateTime? archivedAt;
 
-  InternshipStage get stage => archived
-      ? InternshipStage.archived
-      : InternshipStageLabel.parse(status);
+  InternshipStage get stage =>
+      archived ? InternshipStage.archived : InternshipStageLabel.parse(status);
 
   bool get placementConfirmed {
     final value = placementStatus.toLowerCase();
@@ -171,6 +186,16 @@ class InternshipProfileRecord {
       position: data['position'] as String? ?? '',
       startDate: (data['startDate'] as Timestamp?)?.toDate(),
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
+      shiftStartMinutes: (data['shiftStartMinutes'] as num?)?.toInt(),
+      shiftEndMinutes: (data['shiftEndMinutes'] as num?)?.toInt(),
+      workDays:
+          (data['workDays'] as List<dynamic>?)
+              ?.whereType<num>()
+              .map((day) => day.toInt())
+              .where((day) => day >= 1 && day <= 7)
+              .toList() ??
+          const [],
+      timeZone: data['timeZone'] as String? ?? 'Asia/Manila',
       requiredHours: (data['requiredHours'] as num?)?.toInt() ?? 400,
       supervisorName: data['supervisorName'] as String? ?? '',
       supervisorEmail: data['supervisorEmail'] as String? ?? '',
@@ -202,7 +227,7 @@ class RequirementVersionRecord {
   final int version;
   final String fileName;
   final String storagePath;
-  final DateTime submittedAt;
+  final DateTime? submittedAt;
   final String status;
   final String? remarks;
 
@@ -216,8 +241,7 @@ class RequirementVersionRecord {
       version: (data['version'] as num?)?.toInt() ?? 1,
       fileName: data['fileName'] as String? ?? '',
       storagePath: data['storagePath'] as String? ?? '',
-      submittedAt:
-          (data['submittedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      submittedAt: (data['submittedAt'] as Timestamp?)?.toDate(),
       status: data['status'] as String? ?? 'pending',
       remarks: data['remarks'] as String?,
     );

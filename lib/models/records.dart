@@ -113,9 +113,18 @@ class DtrRecord {
     required this.studentName,
     required this.date,
     required this.timeIn,
-    required this.timeOut,
+    this.timeOut,
     required this.breakMinutes,
     required this.status,
+    this.attendanceState = 'submitted',
+    this.workDate,
+    this.workDayEnd,
+    this.checkInPhotoPath,
+    this.scheduledStartAt,
+    this.scheduledEndAt,
+    this.earlyClockOut = false,
+    this.exceptionReason,
+    this.studentResponse,
     this.remarks,
     this.coordinatorId,
     this.academicYear,
@@ -127,31 +136,68 @@ class DtrRecord {
   final String studentName;
   final DateTime date;
   final DateTime timeIn;
-  final DateTime timeOut;
+  final DateTime? timeOut;
   final int breakMinutes;
   final ReviewStatus status;
+  final String attendanceState;
+  final String? workDate;
+  final DateTime? workDayEnd;
+  final String? checkInPhotoPath;
+  final DateTime? scheduledStartAt;
+  final DateTime? scheduledEndAt;
+  final bool earlyClockOut;
+  final String? exceptionReason;
+  final String? studentResponse;
   final String? remarks;
   final String? coordinatorId;
   final String? academicYear;
   final bool archived;
 
+  bool get isInProgress => attendanceState == 'in_progress';
+
   double get renderedHours {
-    final minutes = timeOut.difference(timeIn).inMinutes - breakMinutes;
+    final end = timeOut;
+    if (end == null ||
+        isInProgress ||
+        breakMinutes < 0 ||
+        timeIn.isBefore(date) ||
+        !end.isBefore(date.add(const Duration(hours: 25))) ||
+        !end.isBefore(workDayEnd ?? date.add(const Duration(days: 1))) ||
+        end.isAfter(DateTime.now())) {
+      return 0;
+    }
+    final minutes = end.difference(timeIn).inMinutes - breakMinutes;
     return minutes <= 0 ? 0 : minutes / 60;
   }
 
   factory DtrRecord.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const <String, dynamic>{};
     final now = DateTime.now();
+    final timeIn = (data['timeIn'] as Timestamp?)?.toDate() ?? now;
     return DtrRecord(
       id: doc.id,
       studentId: data['studentId'] as String? ?? '',
       studentName: data['studentName'] as String? ?? 'Student',
       date: (data['date'] as Timestamp?)?.toDate() ?? now,
-      timeIn: (data['timeIn'] as Timestamp?)?.toDate() ?? now,
-      timeOut: (data['timeOut'] as Timestamp?)?.toDate() ?? now,
-      breakMinutes: (data['breakMinutes'] as num?)?.toInt() ?? 0,
+      timeIn: timeIn,
+      timeOut: (data['timeOut'] as Timestamp?)?.toDate(),
+      breakMinutes:
+          data['breakMinutes'] is int &&
+              data['date'] is Timestamp &&
+              data['timeIn'] is Timestamp &&
+              (data['academicYear'] as String?)?.trim().isNotEmpty == true
+          ? data['breakMinutes'] as int
+          : -1,
       status: ReviewStatusLabel.parse(data['status'] as String?),
+      attendanceState: data['attendanceState'] as String? ?? 'submitted',
+      workDayEnd: (data['workDayEnd'] as Timestamp?)?.toDate(),
+      workDate: data['workDate'] as String?,
+      checkInPhotoPath: data['checkInPhotoPath'] as String?,
+      scheduledStartAt: (data['scheduledStartAt'] as Timestamp?)?.toDate(),
+      scheduledEndAt: (data['scheduledEndAt'] as Timestamp?)?.toDate(),
+      earlyClockOut: data['earlyClockOut'] as bool? ?? false,
+      exceptionReason: data['exceptionReason'] as String?,
+      studentResponse: data['studentResponse'] as String?,
       remarks: data['remarks'] as String?,
       coordinatorId: data['coordinatorId'] as String?,
       academicYear: data['academicYear'] as String?,
@@ -196,6 +242,13 @@ class NotificationRecord {
   final String? createdBy;
   final List<String> readBy;
   final List<String> dismissedBy;
+
+  DateTime get deliveryTime {
+    final scheduled = scheduledFor;
+    return scheduled != null && scheduled.isAfter(createdAt)
+        ? scheduled
+        : createdAt;
+  }
 
   bool get isDue =>
       scheduledFor == null || !scheduledFor!.isAfter(DateTime.now());
@@ -396,6 +449,7 @@ class SupervisorEvaluationRecord {
     required this.status,
     required this.expiresAt,
     required this.createdAt,
+    this.hasCompletedPdf = false,
     this.ratings = const {},
     this.comments,
     this.submittedAt,
@@ -413,6 +467,7 @@ class SupervisorEvaluationRecord {
   final String status;
   final DateTime expiresAt;
   final DateTime createdAt;
+  final bool hasCompletedPdf;
   final Map<String, int> ratings;
   final String? comments;
   final DateTime? submittedAt;
@@ -443,6 +498,7 @@ class SupervisorEvaluationRecord {
       status: data['status'] as String? ?? 'pending',
       expiresAt: (data['expiresAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      hasCompletedPdf: data['completedPath'] is String,
       ratings: rawRatings.map(
         (key, value) => MapEntry(key, (value as num).toInt()),
       ),
@@ -499,7 +555,6 @@ class AcademicArchiveContents {
   final List<SupervisorEvaluationRecord> evaluations;
 }
 
-
 class PublicEvaluationAccessRecord {
   const PublicEvaluationAccessRecord({
     required this.token,
@@ -509,9 +564,16 @@ class PublicEvaluationAccessRecord {
     required this.status,
     required this.expiresAt,
     required this.archived,
+    this.program = '',
+    this.startDate,
+    this.endDate,
+    this.pdfRequired = false,
     this.submittedAt,
   });
 
+  final String program;
+  final DateTime? startDate, endDate;
+  final bool pdfRequired;
   final String token;
   final String studentName;
   final String companyName;
@@ -526,12 +588,18 @@ class PublicEvaluationAccessRecord {
 
   factory PublicEvaluationAccessRecord.fromJson(Map<String, dynamic> data) {
     return PublicEvaluationAccessRecord(
+      program: data['program'] as String? ?? '',
+      startDate: DateTime.tryParse(data['startDate'] as String? ?? ''),
+      endDate: DateTime.tryParse(data['endDate'] as String? ?? ''),
+      pdfRequired: data['pdfRequired'] == true,
       token: data['token'] as String? ?? '',
       studentName: data['studentName'] as String? ?? 'Student Intern',
       companyName: data['companyName'] as String? ?? '',
-      supervisorName: data['supervisorName'] as String? ?? 'Industry Supervisor',
+      supervisorName:
+          data['supervisorName'] as String? ?? 'Industry Supervisor',
       status: data['status'] as String? ?? 'pending',
-      expiresAt: DateTime.tryParse(data['expiresAt'] as String? ?? '') ??
+      expiresAt:
+          DateTime.tryParse(data['expiresAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       archived: data['archived'] as bool? ?? false,
       submittedAt: DateTime.tryParse(data['submittedAt'] as String? ?? ''),

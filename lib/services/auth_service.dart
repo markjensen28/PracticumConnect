@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../core/app_config.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -12,7 +15,7 @@ class AuthService {
 
   Future<AppUser> signIn(String email, String password) async {
     final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email.trim(),
+      email: _normalizeEmail(email),
       password: password,
     );
     final firebaseUser = credential.user;
@@ -20,53 +23,6 @@ class AuthService {
       throw StateError('Firebase did not return a signed-in user.');
     }
     return _loadProfile(firebaseUser);
-  }
-
-  Future<AppUser> registerStudent({
-    required String email,
-    required String password,
-    required String displayName,
-    required String studentNumber,
-  }) async {
-    final credential = await FirebaseAuth.instance
-        .createUserWithEmailAndPassword(
-          email: email.trim(),
-          password: password,
-        );
-    final firebaseUser = credential.user;
-    if (firebaseUser == null) {
-      throw StateError('Firebase did not return the new student account.');
-    }
-    try {
-      await firebaseUser.updateDisplayName(displayName.trim());
-      final profile = AppUser(
-        uid: firebaseUser.uid,
-        email: email.trim(),
-        displayName: displayName.trim(),
-        role: UserRole.student,
-        studentNumber: studentNumber.trim(),
-        approvalStatus: 'approved',
-      );
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(firebaseUser.uid)
-          .set({
-            'email': profile.email,
-            'displayName': profile.displayName,
-            'role': profile.role.value,
-            'studentNumber': profile.studentNumber,
-            'staffId': null,
-            'department': null,
-            'approvalStatus': 'approved',
-            'active': true,
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-      return profile;
-    } catch (_) {
-      await firebaseUser.delete();
-      rethrow;
-    }
   }
 
   Future<void> registerCoordinatorRequest({
@@ -78,7 +34,7 @@ class AuthService {
   }) async {
     final credential = await FirebaseAuth.instance
         .createUserWithEmailAndPassword(
-          email: email.trim(),
+          email: _normalizeEmail(email),
           password: password,
         );
     final firebaseUser = credential.user;
@@ -88,11 +44,13 @@ class AuthService {
 
     try {
       await firebaseUser.updateDisplayName(displayName.trim());
+      await firebaseUser.getIdToken(true);
+      final profileEmail = _emailForProfile(firebaseUser, email);
       await FirebaseFirestore.instance
           .collection('users')
           .doc(firebaseUser.uid)
           .set({
-            'email': email.trim(),
+            'email': profileEmail,
             'displayName': displayName.trim(),
             'role': UserRole.coordinator.value,
             'studentNumber': null,
@@ -126,11 +84,51 @@ class AuthService {
     if (!snapshot.exists) {
       await FirebaseAuth.instance.signOut();
       throw StateError(
-        'No user profile was found. Ask the CAS College Coordinator / SIP Admin to create the '
-        'users/${firebaseUser.uid} record.',
+        'No authorized profile was found. Ask your school administrator to check your roster invitation.',
       );
     }
-    final profile = AppUser.fromMap(firebaseUser.uid, snapshot.data()!);
+    var profile = AppUser.fromMap(firebaseUser.uid, snapshot.data()!);
+
+    if (profile.role == UserRole.student) {
+      try {
+        final enrollment = snapshot.data()?['enrollmentStatus'];
+        if (enrollment != 'pending' && enrollment != 'active') {
+          throw StateError(
+            'Ask your coordinator for your official roster invitation.',
+          );
+        }
+        await firebaseUser.reload();
+        final current = FirebaseAuth.instance.currentUser!;
+        if (!current.emailVerified) {
+          await current.sendEmailVerification();
+          throw StateError(
+            'Check your inbox for the verification link, then sign in again.',
+          );
+        }
+        final token = await current.getIdTokenResult(true);
+        if (enrollment == 'pending' ||
+            token.claims?['student_enrolled'] != true) {
+          final response = await http.post(
+            Uri.parse(
+              AppConfig.coordinatorApprovalApiUrl,
+            ).resolve('/api/student-activation'),
+            headers: {'Authorization': 'Bearer ${token.token}'},
+          );
+          if (response.statusCode != 200) {
+            throw StateError(
+              (jsonDecode(response.body) as Map)['error'] ??
+                  'Unable to activate your account.',
+            );
+          }
+          await current.getIdToken(true);
+          final refreshed = await snapshot.reference.get();
+          profile = AppUser.fromMap(refreshed.id, refreshed.data()!);
+        }
+      } catch (_) {
+        await FirebaseAuth.instance.signOut();
+        rethrow;
+      }
+    }
 
     if (profile.isPendingCoordinator) {
       await FirebaseAuth.instance.signOut();
@@ -156,4 +154,9 @@ class AuthService {
   Future<void> signOut() async {
     await FirebaseAuth.instance.signOut();
   }
+
+  String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  String _emailForProfile(User firebaseUser, String fallback) =>
+      firebaseUser.email?.trim() ?? _normalizeEmail(fallback);
 }

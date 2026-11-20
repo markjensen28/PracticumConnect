@@ -21,8 +21,9 @@ extension UserRoleLabel on UserRole {
 
   static UserRole parse(String? value) => switch (value?.toLowerCase()) {
     'admin' || 'cas_coordinator' || 'sip_admin' => UserRole.admin,
-    'coordinator' || 'program_coordinator' || 'program_adviser' =>
-      UserRole.coordinator,
+    'coordinator' ||
+    'program_coordinator' ||
+    'program_adviser' => UserRole.coordinator,
     'student' || 'intern' => UserRole.student,
     _ => throw const FormatException('Unsupported user role'),
   };
@@ -37,10 +38,12 @@ class AppUser {
     this.studentNumber,
     this.staffId,
     this.department,
+    this.enrollmentStatus,
     this.approvalStatus = 'approved',
     this.coordinatorId,
     this.coordinatorName,
     this.program,
+    this.section,
     this.yearLevel,
     this.academicYear,
     this.phone,
@@ -56,9 +59,11 @@ class AppUser {
   final String? staffId;
   final String? department;
   final String approvalStatus;
+  final String? enrollmentStatus;
   final String? coordinatorId;
   final String? coordinatorName;
   final String? program;
+  final String? section;
   final String? yearLevel;
   final String? academicYear;
   final String? phone;
@@ -89,10 +94,12 @@ class AppUser {
       studentNumber: data['studentNumber'] as String?,
       staffId: data['staffId'] as String?,
       department: data['department'] as String?,
+      enrollmentStatus: data['enrollmentStatus'] as String?,
       approvalStatus: data['approvalStatus'] as String? ?? 'approved',
       coordinatorId: data['coordinatorId'] as String?,
       coordinatorName: data['coordinatorName'] as String?,
       program: data['program'] as String?,
+      section: data['section'] as String?,
       yearLevel: data['yearLevel'] as String?,
       academicYear: data['academicYear'] as String?,
       phone: data['phone'] as String?,

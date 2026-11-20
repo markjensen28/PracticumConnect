@@ -3,12 +3,18 @@ import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
+import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
 
 class AccountSettingsScreen extends StatelessWidget {
-  const AccountSettingsScreen({super.key, required this.user});
+  const AccountSettingsScreen({
+    super.key,
+    required this.user,
+    required this.repository,
+  });
 
   final AppUser user;
+  final PracticumRepository repository;
 
   @override
   Widget build(BuildContext context) => WorkflowPage(
@@ -76,7 +82,7 @@ class AccountSettingsScreen extends StatelessWidget {
                                 style: TextStyle(
                                   color: AppTheme.text,
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 12,
+                                  fontSize: AppTheme.fontSmall,
                                 ),
                               ),
                               SizedBox(height: 2),
@@ -84,7 +90,7 @@ class AccountSettingsScreen extends StatelessWidget {
                                 'Practicum Connect uses a clean light interface for consistent school deployment.',
                                 style: TextStyle(
                                   color: AppTheme.muted,
-                                  fontSize: 10,
+                                  fontSize: AppTheme.fontCaption,
                                   height: 1.35,
                                 ),
                               ),
@@ -95,6 +101,40 @@ class AccountSettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  if (user.role != UserRole.admin)
+                    StreamBuilder<int>(
+                      stream: repository.watchReminderHours(user),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const Text(
+                            'Unable to load reminder preferences.',
+                          );
+                        }
+                        final hours = snapshot.data;
+                        if (hours == null) {
+                          return const LinearProgressIndicator();
+                        }
+                        final student = user.role == UserRole.student;
+                        final amount = hours % 24 == 0
+                            ? '${hours ~/ 24} day${hours == 24 ? '' : 's'}'
+                            : '$hours hour${hours == 1 ? '' : 's'}';
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            student
+                                ? 'Requirement deadline reminder'
+                                : 'Pending verification reminder',
+                          ),
+                          subtitle: Text(
+                            student
+                                ? '$amount before the deadline'
+                                : '$amount after submission',
+                          ),
+                          trailing: const Icon(Icons.edit_outlined),
+                          onTap: () => _editReminder(context, hours),
+                        );
+                      },
+                    ),
                   OutlinedButton.icon(
                     onPressed: user.email.isEmpty
                         ? null
@@ -107,7 +147,7 @@ class AccountSettingsScreen extends StatelessWidget {
                     'Account role and internship details are managed by authorized school personnel.',
                     style: TextStyle(
                       color: AppTheme.muted,
-                      fontSize: 10,
+                      fontSize: AppTheme.fontCaption,
                       height: 1.4,
                     ),
                   ),
@@ -133,6 +173,92 @@ class AccountSettingsScreen extends StatelessWidget {
       ],
     ),
   );
+
+  Future<void> _editReminder(BuildContext context, int initialHours) async {
+    var days = initialHours % 24 == 0;
+    var amount = '${days ? initialHours ~/ 24 : initialHours}';
+    String? error;
+    var saving = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text(
+            user.role == UserRole.student
+                ? 'Remind me before the deadline'
+                : 'Remind me after submission',
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                initialValue: amount,
+                onChanged: (value) => amount = value,
+                enabled: !saving,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Time',
+                  errorText: error,
+                ),
+              ),
+              DropdownButtonFormField<bool>(
+                initialValue: days,
+                decoration: const InputDecoration(labelText: 'Unit'),
+                items: const [
+                  DropdownMenuItem(value: true, child: Text('Days')),
+                  DropdownMenuItem(value: false, child: Text('Hours')),
+                ],
+                onChanged: saving
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          update(() {
+                            days = value;
+                            error = null;
+                          });
+                        }
+                      },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final hours =
+                          (int.tryParse(amount.trim()) ?? 0) * (days ? 24 : 1);
+                      if (hours < 1 || hours > 720) {
+                        update(
+                          () => error =
+                              'Enter a whole number from 1 to ${days ? 30 : 720}.',
+                        );
+                        return;
+                      }
+                      update(() => saving = true);
+                      try {
+                        await repository.saveReminderHours(user, hours);
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      } catch (e) {
+                        if (context.mounted) {
+                          update(() {
+                            saving = false;
+                            error = 'Unable to save reminder preference.';
+                          });
+                        }
+                      }
+                    },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _sendPasswordReset(BuildContext context) async {
     try {
@@ -175,7 +301,7 @@ class _SettingsRow extends StatelessWidget {
                 label,
                 style: const TextStyle(
                   color: AppTheme.muted,
-                  fontSize: 10.5,
+                  fontSize: AppTheme.fontCaption,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -186,7 +312,7 @@ class _SettingsRow extends StatelessWidget {
                 value,
                 style: const TextStyle(
                   color: AppTheme.text,
-                  fontSize: 11.5,
+                  fontSize: AppTheme.fontSmall,
                   fontWeight: FontWeight.w700,
                 ),
               ),

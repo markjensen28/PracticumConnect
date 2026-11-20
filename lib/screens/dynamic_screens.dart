@@ -458,7 +458,7 @@ class PeopleScreen extends StatelessWidget {
                       'Accounts',
                       style: TextStyle(
                         color: AppTheme.navy,
-                        fontSize: 14,
+                        fontSize: AppTheme.fontBody,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -476,7 +476,7 @@ class PeopleScreen extends StatelessWidget {
                         '${visibleUsers.length}',
                         style: const TextStyle(
                           color: AppTheme.blue,
-                          fontSize: 11,
+                          fontSize: AppTheme.fontSmall,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -718,7 +718,7 @@ class _CoordinatorRequestPanel extends StatelessWidget {
                         'Program Coordinator verification requests',
                         style: TextStyle(
                           color: AppTheme.navy,
-                          fontSize: 14,
+                          fontSize: AppTheme.fontBody,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -726,7 +726,7 @@ class _CoordinatorRequestPanel extends StatelessWidget {
                         '${requests.length} request${requests.length == 1 ? '' : 's'} waiting for CAS College Coordinator / SIP Admin review',
                         style: const TextStyle(
                           color: AppTheme.muted,
-                          fontSize: 11.5,
+                          fontSize: AppTheme.fontSmall,
                         ),
                       ),
                     ],
@@ -762,7 +762,7 @@ class _CoordinatorRequestPanel extends StatelessWidget {
                               item.email,
                               style: const TextStyle(
                                 color: AppTheme.muted,
-                                fontSize: 11.5,
+                                fontSize: AppTheme.fontSmall,
                               ),
                             ),
                             const SizedBox(height: 3),
@@ -770,7 +770,7 @@ class _CoordinatorRequestPanel extends StatelessWidget {
                               'Staff ID: ${item.staffId ?? 'Not supplied'}  •  ${item.department ?? 'Department not supplied'}',
                               style: const TextStyle(
                                 color: AppTheme.text,
-                                fontSize: 11.5,
+                                fontSize: AppTheme.fontSmall,
                               ),
                             ),
                           ],
@@ -874,7 +874,7 @@ class _AccountCard extends StatelessWidget {
                       item.email,
                       style: const TextStyle(
                         color: AppTheme.muted,
-                        fontSize: 11.5,
+                        fontSize: AppTheme.fontSmall,
                       ),
                     ),
                     if (item.studentNumber != null)
@@ -882,7 +882,7 @@ class _AccountCard extends StatelessWidget {
                         'Student no. ${item.studentNumber}',
                         style: const TextStyle(
                           color: AppTheme.muted,
-                          fontSize: 11.5,
+                          fontSize: AppTheme.fontSmall,
                         ),
                       ),
                     if (!studentsOnly && item.staffId != null)
@@ -890,7 +890,7 @@ class _AccountCard extends StatelessWidget {
                         'Staff ID ${item.staffId} • ${item.department ?? 'No department'}',
                         style: const TextStyle(
                           color: AppTheme.muted,
-                          fontSize: 11.5,
+                          fontSize: AppTheme.fontSmall,
                         ),
                       ),
                     if (studentsOnly)
@@ -898,7 +898,7 @@ class _AccountCard extends StatelessWidget {
                         'Coordinator: ${item.coordinatorName ?? 'Unassigned'}',
                         style: const TextStyle(
                           color: AppTheme.muted,
-                          fontSize: 11.5,
+                          fontSize: AppTheme.fontSmall,
                         ),
                       ),
                   ],
@@ -1163,7 +1163,7 @@ class _ModulePage extends StatelessWidget {
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               color: AppTheme.navy,
               fontWeight: FontWeight.w800,
-              fontSize: compact ? 20 : 23,
+              fontSize: compact ? 24 : 28,
             ),
           ),
           const SizedBox(height: 5),
@@ -1171,7 +1171,7 @@ class _ModulePage extends StatelessWidget {
             subtitle,
             style: const TextStyle(
               color: AppTheme.muted,
-              fontSize: 12.5,
+              fontSize: AppTheme.fontSmall,
               height: 1.35,
             ),
           ),
@@ -1275,7 +1275,10 @@ class _Empty extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.muted, fontSize: 12.5),
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: AppTheme.fontSmall,
+                ),
               ),
             ],
           ),

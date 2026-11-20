@@ -3,17 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
-// Do not initialize Firebase unless the local emulator is available.
-const hub = await fetch('http://127.0.0.1:4400/emulators');
-if (!hub.ok) {
-  throw new Error('Local emulator hub is unavailable. No records were written.');
-}
-
-const emulators = await hub.json();
-if (emulators.firestore?.port !== 8080) {
-  throw new Error('Expected the local Firestore emulator on port 8080.');
-}
-
+// All writes below target a loopback Firestore emulator and a demo project.
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
 
 // A separate fictional project keeps this test isolated from other emulator data.
@@ -22,6 +12,7 @@ process.env.FIREBASE_PROJECT_ID = projectId;
 initializeApp({ projectId });
 
 const { submitPublicEvaluation } = await import('./evaluation_core.mjs');
+const { mailboxProof } = await import('./evaluation_test_mailbox.mjs');
 const db = getFirestore();
 
 const currentYear = '2026-2027';
@@ -127,6 +118,7 @@ async function createScenario(name, {
     academicYear: recordYear,
     status: 'verified',
     archived: false,
+    date: Timestamp.fromDate(new Date('2026-09-01T00:00:00+08:00')),
     timeIn: Timestamp.fromDate(timeIn),
     timeOut: Timestamp.fromDate(timeOut),
     breakMinutes: 0,
@@ -137,6 +129,7 @@ async function createScenario(name, {
   const result = await submitPublicEvaluation({
     body: {
       token,
+      proof: await mailboxProof(token,email),
       email,
       comments: 'Fictional completion-test comment',
       ratings,

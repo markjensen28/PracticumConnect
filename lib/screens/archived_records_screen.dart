@@ -73,7 +73,9 @@ class _ArchivedRecordsScreenState extends State<ArchivedRecordsScreen> {
                               title: Text('AY ${archive.academicYear}'),
                               subtitle: Text(
                                 '${archive.requirementCount} documents • ${archive.dtrCount} DTR • ${archive.evaluationCount} evaluations',
-                                style: const TextStyle(fontSize: 11),
+                                style: const TextStyle(
+                                  fontSize: AppTheme.fontSmall,
+                                ),
                               ),
                               trailing: const Icon(Icons.chevron_right_rounded),
                               onTap: () =>
@@ -355,7 +357,10 @@ class _ArchiveSection extends StatelessWidget {
             color: AppTheme.surfaceBlue,
             borderRadius: BorderRadius.circular(999),
           ),
-          child: Text('$count', style: const TextStyle(fontSize: 11)),
+          child: Text(
+            '$count',
+            style: const TextStyle(fontSize: AppTheme.fontSmall),
+          ),
         ),
       ],
     ),

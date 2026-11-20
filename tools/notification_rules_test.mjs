@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   initializeTestEnvironment,
@@ -16,7 +17,7 @@ import {
 } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({
-  projectId: 'demo-practicum-connect',
+  projectId: 'demo-notify-' + randomUUID().slice(0,8),
   firestore: {
     host: '127.0.0.1',
     port: 8080,
@@ -47,12 +48,12 @@ try {
 
     await Promise.all([
       setDoc(doc(db, 'users', 'student1'), {
-        role: 'student',
+        role: 'student', enrollmentStatus: 'active',
         active: true,
         coordinatorId: 'coordinator1',
       }),
       setDoc(doc(db, 'users', 'student2'), {
-        role: 'student',
+        role: 'student', enrollmentStatus: 'active',
         active: true,
         coordinatorId: 'coordinator2',
       }),
@@ -125,15 +126,26 @@ try {
   });
 
   const student1 =
-      env.authenticatedContext('student1').firestore();
+      env.authenticatedContext('student1', {student_enrolled:true,email_verified:true}).firestore();
   const student2 =
-      env.authenticatedContext('student2').firestore();
+      env.authenticatedContext('student2', {student_enrolled:true,email_verified:true}).firestore();
   const coordinator1 =
       env.authenticatedContext('coordinator1').firestore();
   const coordinator2 =
       env.authenticatedContext('coordinator2').firestore();
   const admin =
       env.authenticatedContext('admin1').firestore();
+
+  await check('Student and coordinator can set their own reminder time', async () => {
+    await assertSucceeds(updateDoc(doc(student1, 'users', 'student1'), {reminderHours: 6}));
+    await assertSucceeds(updateDoc(doc(coordinator1, 'users', 'coordinator1'), {reminderHours: 24}));
+  });
+  await check('Reminder changes enforce the range and recipient', async () => {
+    for (const hours of [0, 721, 1.5]) {
+      await assertFails(updateDoc(doc(student1, 'users', 'student1'), {reminderHours: hours}));
+    }
+    await assertFails(updateDoc(doc(student2, 'users', 'student1'), {reminderHours: 5}));
+  });
 
   await check('Student can query active notices for everyone', () =>
     assertSucceeds(

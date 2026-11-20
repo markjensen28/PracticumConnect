@@ -326,7 +326,7 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
                             'Maintain company/agency information independently from MOA records.',
                             style: TextStyle(
                               color: AppTheme.muted,
-                              fontSize: 11.5,
+                              fontSize: AppTheme.fontSmall,
                             ),
                           ),
                         ],
@@ -883,7 +883,7 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
                 const Text(
                   'Choose a file to replace the stored MOA. Leave it unchanged if you only want to update the expiration date.',
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: AppTheme.fontCaption,
                     color: AppTheme.muted,
                     height: 1.35,
                   ),
@@ -1155,7 +1155,7 @@ class _MoaList extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 9.6,
+                                  fontSize: AppTheme.fontCaption,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -1250,14 +1250,17 @@ class _MoaList extends StatelessWidget {
                     Text(
                       '${records.length} of ${records.length} selected',
                       style: const TextStyle(
-                        fontSize: 9,
+                        fontSize: AppTheme.fontCaption,
                         color: AppTheme.muted,
                       ),
                     ),
                     const Spacer(),
                     const Text(
                       '10 / page',
-                      style: TextStyle(fontSize: 9, color: AppTheme.muted),
+                      style: TextStyle(
+                        fontSize: AppTheme.fontCaption,
+                        color: AppTheme.muted,
+                      ),
                     ),
                   ],
                 ),
@@ -1267,7 +1270,7 @@ class _MoaList extends StatelessWidget {
   );
 
   static const TextStyle _head = TextStyle(
-    fontSize: 8.6,
+    fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
   );
@@ -1276,7 +1279,7 @@ class _MoaList extends StatelessWidget {
     value,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
-    style: const TextStyle(fontSize: 9.1),
+    style: const TextStyle(fontSize: AppTheme.fontCaption),
   );
 }
 
@@ -1319,7 +1322,10 @@ class _MoaDetailsState extends State<_MoaDetails> {
       children: [
         Text(
           widget.record.moaNumber,
-          style: const TextStyle(fontSize: 9, color: AppTheme.muted),
+          style: const TextStyle(
+            fontSize: AppTheme.fontCaption,
+            color: AppTheme.muted,
+          ),
         ),
         const SizedBox(height: 7),
         WorkspaceTabs(
@@ -1412,7 +1418,10 @@ class _MoaDetailsState extends State<_MoaDetails> {
       const Divider(height: 22),
       const Text(
         'Status',
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+        style: TextStyle(
+          fontSize: AppTheme.fontCaption,
+          fontWeight: FontWeight.w800,
+        ),
       ),
       const SizedBox(height: 6),
       InkWell(
@@ -1434,7 +1443,10 @@ class _MoaDetailsState extends State<_MoaDetails> {
       const Divider(height: 22),
       const Text(
         'Point of Contact',
-        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+        style: TextStyle(
+          fontSize: AppTheme.fontCaption,
+          fontWeight: FontWeight.w800,
+        ),
       ),
       const SizedBox(height: 5),
       InfoRow('Name', widget.record.contactName ?? '—', labelWidth: 74),
@@ -1455,7 +1467,10 @@ class _MoaDetailsState extends State<_MoaDetails> {
       children: [
         const Text(
           'MOA Document',
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: AppTheme.fontCaption,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 8),
         Row(
@@ -1472,7 +1487,7 @@ class _MoaDetailsState extends State<_MoaDetails> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 9.6,
+                  fontSize: AppTheme.fontCaption,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1513,7 +1528,10 @@ class _MoaDetailsState extends State<_MoaDetails> {
       children: [
         const Text(
           'Record History',
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: AppTheme.fontCaption,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 10),
         _historyLine(
@@ -1541,10 +1559,18 @@ class _MoaDetailsState extends State<_MoaDetails> {
       children: [
         Icon(icon, size: 15, color: AppTheme.muted),
         const SizedBox(width: 8),
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 9.5))),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: AppTheme.fontCaption),
+          ),
+        ),
         Text(
           shortDate(date),
-          style: const TextStyle(fontSize: 8.8, color: AppTheme.muted),
+          style: const TextStyle(
+            fontSize: AppTheme.fontCaption,
+            color: AppTheme.muted,
+          ),
         ),
       ],
     ),
@@ -1562,7 +1588,7 @@ class _MoaDetailsState extends State<_MoaDetails> {
           ? widget.record.remarks!
           : 'No notes have been added for this MOA.',
       style: const TextStyle(
-        fontSize: 9.7,
+        fontSize: AppTheme.fontCaption,
         color: AppTheme.muted,
         height: 1.45,
       ),

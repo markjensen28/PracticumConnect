@@ -16,7 +16,7 @@ class AppConfig {
 
   static const supabaseBucket = String.fromEnvironment(
     'SUPABASE_BUCKET',
-    defaultValue: 'internship-documents',
+    defaultValue: 'PracticumConnectStorage',
   );
 
   // For a deployed Vercel build this may be omitted so the app uses the
@@ -25,7 +25,6 @@ class AppConfig {
   static const _configuredCoordinatorApprovalApi = String.fromEnvironment(
     'COORDINATOR_APPROVAL_API_URL',
   );
-
 
   static const _configuredEvaluationApi = String.fromEnvironment(
     'EVALUATION_API_URL',
@@ -51,6 +50,13 @@ class AppConfig {
     return Uri.base.resolve('/api/coordinator-approval').toString();
   }
 
+  static String get dtrAttendanceApiUrl {
+    final approval = coordinatorApprovalApiUrl.trim();
+    final uri = Uri.tryParse(approval);
+    if (uri != null) return uri.resolve('/api/dtr-attendance').toString();
+    return Uri.base.resolve('/api/dtr-attendance').toString();
+  }
+
   static String get staffClaimsApiUrl {
     final approval = coordinatorApprovalApiUrl.trim();
     final uri = Uri.tryParse(approval);
@@ -59,6 +65,10 @@ class AppConfig {
     }
     return Uri.base.resolve('/api/staff-claims').toString();
   }
+
+  static String get documentDownloadApiUrl => Uri.parse(
+    coordinatorApprovalApiUrl,
+  ).resolve('/api/document-download').toString();
 
   static bool get hasSupabaseConfig =>
       supabaseUrl.trim().isNotEmpty && supabasePublishableKey.trim().isNotEmpty;
