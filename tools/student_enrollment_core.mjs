@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
-import { sendSchoolEmail, singleMailbox } from './school_email.mjs';
+import { sendStudentEmail, singleMailbox } from './school_email.mjs';
 
 const digest = (text) => createHash('sha256').update(text).digest('hex');
 const numberKey = (number) =>
@@ -87,7 +87,7 @@ export async function planRoster(db, auth, rows) {
   return plan;
 }
 
-export async function provisionStudent(db, auth, row, { resend = false, deliver = sendSchoolEmail } = {}) {
+export async function provisionStudent(db, auth, row, { resend = false, deliver = sendStudentEmail } = {}) {
   const { uid, email, studentNumber, displayName, rosterRef } = row;
   const userRef = db.collection('users').doc(uid);
   const emailRef = db.collection('roster_emails').doc(digest(email));

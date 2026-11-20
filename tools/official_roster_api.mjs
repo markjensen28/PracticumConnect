@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureAdminApp } from './staff_claims_core.mjs';
+import { studentEmailConfigured } from './school_email.mjs';
 import { managePendingStudent, planRoster, provisionStudent } from './student_enrollment_core.mjs';
 
 const rosterNumberKey = (number) => String(number || '').trim().normalize('NFKC').toUpperCase();
-const rosterDigest = (text) => createHash('sha256').update(text).digest('hex');
 
 export function validRosterOrigin(value, localServer = false) {
   try {
@@ -48,8 +47,7 @@ export async function importOfficialRoster({ authorization, body }, localServer 
     if (pendingAction) {
       if (action === 'resend') {
         if (
-          !process.env.RESEND_API_KEY ||
-          !process.env.SCHOOL_EMAIL_FROM ||
+          !studentEmailConfigured() ||
           !validRosterOrigin(process.env.APP_ORIGIN, localServer)
         )
           return {
@@ -69,8 +67,7 @@ export async function importOfficialRoster({ authorization, body }, localServer 
         payload: { error: 'Existing accounts require the reviewed administrator migration command.' },
       };
     if (
-      !process.env.RESEND_API_KEY ||
-      !process.env.SCHOOL_EMAIL_FROM ||
+      !studentEmailConfigured() ||
       !validRosterOrigin(process.env.APP_ORIGIN, localServer)
     ) {
       return {
