@@ -75,8 +75,8 @@ export async function importOfficialRoster({ authorization, body }, localServer 
         payload: { error: 'Configure the public school app URL and server email delivery before importing.' },
       };
     }
-    await provisionStudent(db, auth, plan[0]);
-    return { status: 200, payload: { ok: true } };
+    const invitation = await provisionStudent(db, auth, plan[0]);
+    return { status: 200, payload: { ok: true, invitation } };
   } catch (error) {
     return { status: 400, payload: { error: error.message || 'Roster import failed.' } };
   }

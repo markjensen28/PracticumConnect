@@ -1770,54 +1770,8 @@ class _ModuleHeader extends StatelessWidget {
   final Widget? action;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final compact = constraints.maxWidth < 720;
-      final heading = ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: AppTheme.navy,
-                fontWeight: FontWeight.w800,
-                fontSize: compact ? 24 : 28,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                color: AppTheme.muted,
-                fontSize: AppTheme.fontSmall,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-      );
-      if (action == null) {
-        return Align(alignment: Alignment.centerLeft, child: heading);
-      }
-      if (compact) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [heading, const SizedBox(height: 12), action!],
-        );
-      }
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: heading),
-          const SizedBox(width: 18),
-          action!,
-        ],
-      );
-    },
-  );
+  Widget build(BuildContext context) =>
+      WorkspaceHeader(title: title, subtitle: subtitle, actions: [?action]);
 }
 
 class _ResponsiveStats extends StatelessWidget {

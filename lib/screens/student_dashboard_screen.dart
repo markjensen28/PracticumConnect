@@ -23,16 +23,11 @@ class StudentDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListView(
     children: [
-      Text(
-        'Welcome, ${user.displayName.split(' ').first}',
-        style: Theme.of(context).textTheme.headlineSmall,
+      WorkspaceHeader(
+        title: 'Dashboard',
+        subtitle: DateFormat.yMMMMEEEEd().format(DateTime.now()),
       ),
-      const SizedBox(height: 6),
-      Text(
-        DateFormat.yMMMMEEEEd().format(DateTime.now()),
-        style: const TextStyle(color: AppTheme.muted),
-      ),
-      const SizedBox(height: 24),
+      const SizedBox(height: 22),
       StreamBuilder<List<RequirementDefinition>>(
         stream: repository.watchRequirementDefinitions(),
         builder: (context, definitionsSnapshot) =>
@@ -86,61 +81,39 @@ class StudentDashboardScreen extends StatelessWidget {
                           item.status == ReviewStatus.underReview,
                     )
                     .length;
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final columns = constraints.maxWidth >= 1000
-                        ? 4
-                        : constraints.maxWidth >= 560
-                        ? 2
-                        : 1;
-                    final width =
-                        (constraints.maxWidth - (columns - 1) * 16) / columns;
-                    return Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: [
-                        SizedBox(
-                          width: width,
-                          child: StatCard(
-                            label: 'Required documents',
-                            value: '${definitions.length}',
-                            icon: Icons.fact_check_outlined,
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: StatCard(
-                            label: 'Verified',
-                            value: '$verified',
-                            icon: Icons.check_circle_outline,
-                            color: AppTheme.success,
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: StatCard(
-                            label: 'Awaiting review',
-                            value: '$pending',
-                            icon: Icons.schedule_outlined,
-                          ),
-                        ),
-                        SizedBox(
-                          width: width,
-                          child: StatCard(
-                            label: 'Needs attention',
-                            value: '$attention',
-                            icon: Icons.error_outline,
-                            color: AppTheme.warning,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                return DashboardStatGrid(
+                  cards: [
+                    StatCard(
+                      label: 'Required documents',
+                      value: '${definitions.length}',
+                      icon: Icons.fact_check_outlined,
+                    ),
+                    StatCard(
+                      label: 'Verified',
+                      value: '$verified',
+                      icon: Icons.check_circle_outline,
+                      color: AppTheme.success,
+                    ),
+                    StatCard(
+                      label: 'Awaiting review',
+                      value: '$pending',
+                      icon: Icons.schedule_outlined,
+                      color: AppTheme.purple,
+                    ),
+                    StatCard(
+                      label: 'Needs attention',
+                      value: '$attention',
+                      icon: Icons.error_outline,
+                      color: AppTheme.warning,
+                    ),
+                  ],
                 );
               },
             ),
       ),
-      const SizedBox(height: 24),
+      const SizedBox(height: 18),
+      DashboardWelcome(title: 'Welcome, ${user.displayName.split(' ').first}'),
+      const SizedBox(height: 20),
       LayoutBuilder(
         builder: (context, constraints) {
           final tasks = SectionCard(

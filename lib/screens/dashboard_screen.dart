@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
+import '../core/ssu_brand.dart';
 import '../models/app_feature.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
@@ -20,6 +21,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   AppFeature _selected = AppFeature.dashboard;
+  bool _navigationExpanded = true;
   late final Stream<List<NotificationRecord>> _notificationStream;
 
   @override
@@ -59,21 +61,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
           features: features,
           selected: _selected,
           user: user,
+          expanded: !desktop || _navigationExpanded,
           onSelected: (feature) {
             setState(() => _selected = feature);
             if (!desktop) Navigator.pop(context);
           },
-          onLogout: widget.controller.signOut,
         );
 
         final content = Scaffold(
           backgroundColor: AppTheme.background,
           appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(72),
+            preferredSize: const Size.fromHeight(64),
             child: _TopBar(
               user: user,
               notificationStream: _notificationStream,
               desktop: desktop,
+              navigationExpanded: _navigationExpanded,
+              onToggleNavigation: desktop
+                  ? () => setState(
+                      () => _navigationExpanded = !_navigationExpanded,
+                    )
+                  : null,
               onSearch: _openGlobalSearch,
               onNotifications:
                   RoleAccess.canAccess(user.role, AppFeature.notifications)
@@ -85,25 +93,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
           drawer: desktop
               ? null
               : Drawer(
-                  width: 280,
-                  backgroundColor: Colors.white,
+                  width: 272,
+                  backgroundColor: AppTheme.navy,
                   surfaceTintColor: Colors.transparent,
                   shape: const RoundedRectangleBorder(),
                   child: navigation,
                 ),
           body: LayoutBuilder(
             builder: (context, bodyConstraints) {
-              final roomy = bodyConstraints.maxWidth >= 900;
-              final horizontalPadding = roomy ? 24.0 : 16.0;
+              final roomy = bodyConstraints.maxWidth >= 820;
+              final horizontalPadding = roomy ? 28.0 : 16.0;
               return Padding(
                 padding: EdgeInsets.fromLTRB(
                   horizontalPadding,
-                  roomy ? 24 : 16,
+                  roomy ? 26 : 20,
                   horizontalPadding,
                   roomy ? 28 : 18,
                 ),
                 child: Align(
-                  alignment: Alignment.topLeft,
+                  alignment: Alignment.topCenter,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
                       maxWidth: AppTheme.contentMaxWidth,
@@ -124,17 +132,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
 
-        if (!desktop) return content;
-        return ColoredBox(
-          color: Colors.white,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: 272, child: navigation),
-              const VerticalDivider(width: 1, thickness: 1),
-              Expanded(child: content),
-            ],
-          ),
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (desktop)
+              SizedBox(
+                width: _navigationExpanded ? 250 : 72,
+                child: navigation,
+              ),
+            Expanded(child: content),
+          ],
         );
       },
     );
@@ -408,6 +415,8 @@ class _TopBar extends StatelessWidget {
     required this.user,
     required this.notificationStream,
     required this.desktop,
+    required this.navigationExpanded,
+    this.onToggleNavigation,
     required this.onSearch,
     required this.onNotifications,
     required this.onLogout,
@@ -416,6 +425,8 @@ class _TopBar extends StatelessWidget {
   final AppUser user;
   final Stream<List<NotificationRecord>> notificationStream;
   final bool desktop;
+  final bool navigationExpanded;
+  final VoidCallback? onToggleNavigation;
   final VoidCallback onSearch;
   final VoidCallback? onNotifications;
   final VoidCallback onLogout;
@@ -426,56 +437,54 @@ class _TopBar extends StatelessWidget {
     child: SafeArea(
       bottom: false,
       child: Container(
-        height: 72,
-        padding: EdgeInsets.symmetric(horizontal: desktop ? 28 : 12),
+        height: 64,
+        padding: EdgeInsets.symmetric(horizontal: desktop ? 24 : 8),
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: AppTheme.border)),
         ),
         child: Row(
           children: [
-            if (!desktop)
-              Builder(
-                builder: (context) => IconButton(
-                  tooltip: 'Open navigation',
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                  icon: const Icon(Icons.menu_rounded),
+            Builder(
+              builder: (context) => IconButton(
+                tooltip: !desktop
+                    ? 'Open navigation'
+                    : navigationExpanded
+                    ? 'Collapse navigation'
+                    : 'Expand navigation',
+                onPressed:
+                    onToggleNavigation ??
+                    () => Scaffold.of(context).openDrawer(),
+                icon: const Icon(Icons.menu_rounded, color: AppTheme.navy),
+              ),
+            ),
+            SizedBox(width: desktop ? 12 : 4),
+            Expanded(
+              child: Text(
+                'Practicum Connect',
+                maxLines: desktop ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppTheme.navy,
+                  fontSize: desktop ? 17 : AppTheme.fontSmall,
+                  fontWeight: FontWeight.w800,
+                  height: 1.15,
                 ),
               ),
-            if (!desktop) ...[
-              const SizedBox(width: 4),
-              const Expanded(child: _CompactBrand()),
-            ],
-            if (desktop)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: SizedBox(
-                  width: 390,
-                  height: 46,
-                  child: TextField(
-                    readOnly: true,
-                    showCursor: false,
-                    style: const TextStyle(fontSize: AppTheme.fontBody),
-                    onTap: onSearch,
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                      hintStyle: const TextStyle(fontSize: AppTheme.fontSmall),
-                      hintText: switch (user.role) {
-                        UserRole.student => 'Search requirements or documents',
-                        UserRole.coordinator =>
-                          'Search assigned interns or documents',
-                        UserRole.admin =>
-                          'Search students, documents, institutions',
-                      },
-                      suffixIcon: const Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        size: 14,
-                      ),
-                    ),
-                  ),
+            ),
+            if (desktop) ...[
+              OutlinedButton.icon(
+                onPressed: onSearch,
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: AppTheme.surfaceSoft,
+                  foregroundColor: AppTheme.muted,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  side: const BorderSide(color: AppTheme.border),
                 ),
+                icon: const Icon(Icons.search_rounded, size: 19),
+                label: const Text('Search workspace'),
               ),
-            if (desktop) const Spacer(),
-            if (!desktop)
+              const SizedBox(width: 10),
+            ] else
               IconButton(
                 tooltip: 'Search',
                 onPressed: onSearch,
@@ -554,7 +563,7 @@ class _TopBar extends StatelessWidget {
                 onPressed: onNotifications,
                 icon: const Icon(Icons.notifications_none_rounded, size: 22),
               ),
-            const SizedBox(width: 6),
+            SizedBox(width: desktop ? 7 : 2),
             PopupMenuButton<String>(
               tooltip: 'Account menu',
               onSelected: (value) {
@@ -588,7 +597,7 @@ class _TopBar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircleAvatar(
-                      radius: 16,
+                      radius: 17,
                       backgroundColor: AppTheme.sky,
                       foregroundColor: AppTheme.deepBlue,
                       child: Text(
@@ -642,226 +651,207 @@ class _TopBar extends StatelessWidget {
   );
 }
 
-class _CompactBrand extends StatelessWidget {
-  const _CompactBrand();
-
-  @override
-  Widget build(BuildContext context) => const Row(
-    children: [
-      DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceBlue,
-          borderRadius: BorderRadius.all(Radius.circular(10)),
-          border: Border.fromBorderSide(BorderSide(color: AppTheme.border)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(7),
-          child: Icon(Icons.hub_outlined, color: AppTheme.blue, size: 18),
-        ),
-      ),
-      SizedBox(width: 8),
-      Flexible(
-        child: Text(
-          'Practicum Connect',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: AppTheme.navy,
-            fontWeight: FontWeight.w800,
-            fontSize: AppTheme.fontSmall,
-          ),
-        ),
-      ),
-    ],
-  );
-}
-
 class _SideNavigation extends StatelessWidget {
   const _SideNavigation({
     required this.features,
     required this.selected,
     required this.user,
+    required this.expanded,
     required this.onSelected,
-    required this.onLogout,
   });
+
+  static const _surface = Color(0xFF082952);
 
   final List<AppFeature> features;
   final AppFeature selected;
   final AppUser user;
+  final bool expanded;
   final ValueChanged<AppFeature> onSelected;
-  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) => Material(
-    color: AppTheme.navy,
-    child: SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 20, 16, 20),
-            child: Row(
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Color(0xFF2C4567),
-                    borderRadius: BorderRadius.all(Radius.circular(11)),
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.all(9),
-                    child: Icon(
-                      Icons.hub_outlined,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
+    color: _surface,
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          right: 0,
+          bottom: 0,
+          width: expanded ? 190 : 72,
+          height: expanded ? 45 : 25,
+          child: const IgnorePointer(
+            child: CustomPaint(
+              painter: SsuRibbonPainter(
+                bottomRight: true,
+                base: Color(0xFF1458AC),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(
+          right: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: expanded ? 16 : 10,
+                  vertical: expanded ? 19 : 20,
                 ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Practicum Connect',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: AppTheme.fontBody,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'CAS Internship Management',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Color(0xFFC1CCDC),
-                          fontSize: AppTheme.fontCaption,
+                child: Row(
+                  mainAxisAlignment: expanded
+                      ? MainAxisAlignment.start
+                      : MainAxisAlignment.center,
+                  children: [
+                    SsuSeal(size: expanded ? 50 : 36),
+                    if (expanded) ...[
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Practicum Connect',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                height: 1.15,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'CAS Internship Management',
+                              style: TextStyle(
+                                color: Color(0xFFC9DAF0),
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFF3B506C)),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
-              children: features.map((feature) {
-                final active = selected == feature;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => onSelected(feature),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 170),
-                      curve: Curves.easeOut,
-                      constraints: const BoxConstraints(minHeight: 48),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: active
-                            ? const Color(0xFF2C486D)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 31,
-                            height: 31,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            child: Icon(
-                              feature.icon,
-                              size: 21,
-                              color: active
-                                  ? Colors.white
-                                  : const Color(0xFFC1CCDC),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              feature.labelForRole(user.role),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: active
-                                    ? Colors.white
-                                    : const Color(0xFFDFE6F0),
-                                fontSize: AppTheme.fontBody,
-                                fontWeight: active
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          if (active)
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                        ],
-                      ),
-                    ),
+              ),
+              const Divider(height: 1, color: Color(0xFF24446B)),
+              Expanded(
+                child: ListView.builder(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: expanded ? 12 : 10,
+                    vertical: 10,
                   ),
-                );
-              }).toList(),
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFF3B506C)),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(10),
+                  itemCount: features.length,
+                  itemBuilder: (context, index) {
+                    final feature = features[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: _NavigationItem(
+                        label: feature.labelForRole(user.role),
+                        icon: feature.icon,
+                        expanded: expanded,
+                        selected: selected == feature,
+                        onTap: () => onSelected(feature),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFF24446B)),
+              Padding(
+                padding: EdgeInsets.fromLTRB(10, 6, 10, expanded ? 34 : 20),
+                child: _NavigationItem(
+                  label: 'Help & Support',
+                  icon: Icons.help_outline_rounded,
+                  expanded: expanded,
                   onTap: () => showAboutDialog(
                     context: context,
+                    applicationIcon: const SsuSeal(size: 42),
                     applicationName: 'Practicum Connect',
                     applicationVersion: '0.1.0',
                     applicationLegalese: 'CAS Internship Management System',
                   ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.help_outline_rounded,
-                          size: 20,
-                          color: Color(0xFFC1CCDC),
-                        ),
-                        SizedBox(width: 10),
-                        Text(
-                          'Help & Support',
-                          style: TextStyle(
-                            fontSize: AppTheme.fontSmall,
-                            color: Color(0xFFDFE6F0),
-                          ),
-                        ),
-                      ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _NavigationItem extends StatelessWidget {
+  const _NavigationItem({
+    required this.label,
+    required this.icon,
+    required this.expanded,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool expanded;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const radius = BorderRadius.all(Radius.circular(9));
+    final item = Semantics(
+      label: expanded ? null : label,
+      button: true,
+      selected: selected,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.blue : Colors.transparent,
+          borderRadius: radius,
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          focusColor: Colors.white.withValues(alpha: .18),
+          hoverColor: Colors.white.withValues(alpha: .09),
+          splashColor: Colors.white.withValues(alpha: .14),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 43),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            child: Row(
+              mainAxisAlignment: expanded
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 20, color: Colors.white),
+                if (expanded) ...[
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: selected
+                            ? Colors.white
+                            : const Color(0xFFE0EAFA),
+                        fontSize: AppTheme.fontSmall,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        height: 1.2,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+    return expanded
+        ? item
+        : Tooltip(message: label, excludeFromSemantics: true, child: item);
+  }
 }
 
 String _initials(String name) => name

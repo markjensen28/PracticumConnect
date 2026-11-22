@@ -46,6 +46,18 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
   bool _importing = false;
   final Set<String> _pendingStudentActions = <String>{};
 
+  Future<void> _addStudent() async {
+    final message = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _AddStudentDialog(repository: widget.repository),
+    );
+    if (!mounted || message == null) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _managePendingStudent(AppUser student, String action) async {
     final studentNumber = student.studentNumber;
     if (studentNumber == null || studentNumber.trim().isEmpty) return;
@@ -86,7 +98,7 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
           content: Text(
             resend
                 ? 'Activation email resent to ${student.email}.'
-                : 'Pending student removed. You can correct and reimport the roster row.',
+                : 'Pending student removed. You can add the student again with the corrected details.',
           ),
         ),
       );
@@ -173,14 +185,20 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
     title: 'Student Internship Records',
     subtitle: 'Open a student profile to monitor placement and progress.',
     actions: [
-      if (widget.actor.role == UserRole.admin)
+      if (widget.actor.role.isCollegeAdmin) ...[
+        FilledButton.icon(
+          onPressed: _importing ? null : _addStudent,
+          icon: const Icon(Icons.person_add_alt_rounded),
+          label: const Text('Add student'),
+        ),
         OutlinedButton.icon(
           onPressed: _importing ? null : _importRoster,
-          icon: const Icon(Icons.person_add_alt),
+          icon: const Icon(Icons.upload_file_outlined),
           label: Text(
             _importing ? 'Processing roster' : 'Import official roster',
           ),
         ),
+      ],
     ],
     child: StreamBuilder<List<AppUser>>(
       stream: widget.repository.watchStudentDirectory(widget.actor),
@@ -206,14 +224,15 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
             )
             .toList();
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: Icon(Icons.search_rounded),
                 hintText: 'Search student, number, or program',
               ),
               onChanged: (value) =>
-                  setState(() => _query = value.toLowerCase()),
+                  setState(() => _query = value.trim().toLowerCase()),
             ),
             const SizedBox(height: 14),
             Expanded(
@@ -227,99 +246,7 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
                           ? 'Ask the SIP Admin to confirm the student account is active and assigned to this coordinator.'
                           : 'Registered student accounts appear here.',
                     )
-                  : ListView.separated(
-                      itemCount: students.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final student = students[index];
-                        return Card(
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.all(16),
-                            leading: CircleAvatar(
-                              child: Text(_initials(student.displayName)),
-                            ),
-                            title: Text(
-                              student.enrollmentStatus == 'pending'
-                                  ? '${student.displayName} (Pending activation)'
-                                  : student.displayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${student.studentNumber ?? 'No student number'} • '
-                              '${student.program ?? 'Program not set'}\n'
-                              'Coordinator: ${student.coordinatorName ?? 'Unassigned'}',
-                            ),
-                            isThreeLine: true,
-                            trailing:
-                                widget.actor.role == UserRole.admin &&
-                                    student.enrollmentStatus == 'pending'
-                                ? _pendingStudentActions.contains(student.uid)
-                                      ? const SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : PopupMenuButton<String>(
-                                          tooltip: 'Pending student actions',
-                                          onSelected: (action) =>
-                                              _managePendingStudent(
-                                                student,
-                                                action,
-                                              ),
-                                          itemBuilder: (context) => [
-                                            const PopupMenuItem(
-                                              value: 'resend',
-                                              child: ListTile(
-                                                dense: true,
-                                                leading: Icon(
-                                                  Icons
-                                                      .mark_email_read_outlined,
-                                                ),
-                                                title: Text(
-                                                  'Resend activation email',
-                                                ),
-                                              ),
-                                            ),
-                                            const PopupMenuItem(
-                                              value: 'remove',
-                                              child: ListTile(
-                                                dense: true,
-                                                leading: Icon(
-                                                  Icons.person_remove_outlined,
-                                                ),
-                                                title: Text(
-                                                  'Remove pending student',
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                : const Icon(Icons.chevron_right),
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => Scaffold(
-                                  appBar: AppBar(
-                                    title: const Text('Student Profile'),
-                                  ),
-                                  body: Padding(
-                                    padding: const EdgeInsets.all(20),
-                                    child: StudentInternshipProfileScreen(
-                                      actor: widget.actor,
-                                      student: student,
-                                      repository: widget.repository,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                  : _buildDirectory(students),
             ),
           ],
         );
@@ -327,12 +254,372 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
     ),
   );
 
+  Widget _buildDirectory(List<AppUser> students) => LayoutBuilder(
+    builder: (context, constraints) {
+      final table = constraints.maxWidth >= 740;
+      return Align(
+        alignment: Alignment.topCenter,
+        child: Card(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (table) ...[
+                ColoredBox(
+                  color: AppTheme.surfaceBlue,
+                  child: _DirectoryRow(
+                    student: _heading('Student'),
+                    program: _heading('Program'),
+                    coordinator: _heading('Coordinator'),
+                    status: _heading('Enrollment'),
+                    actions: _heading('Actions'),
+                  ),
+                ),
+                const Divider(),
+              ],
+              Flexible(
+                child: ListView.separated(
+                  itemCount: students.length,
+                  shrinkWrap: students.length <= 6,
+                  separatorBuilder: (_, _) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final student = students[index];
+                    final pending = student.enrollmentStatus == 'pending';
+                    final status = pending
+                        ? 'Pending activation'
+                        : student.active
+                        ? 'Active'
+                        : 'Inactive';
+                    final actions = _pendingActions(student);
+                    final title = Text(
+                      student.displayName,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    );
+                    if (!table) {
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.sky,
+                          foregroundColor: AppTheme.navy,
+                          child: Text(_initials(student.displayName)),
+                        ),
+                        title: title,
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(student.program ?? 'Program not set'),
+                            Text(student.studentNumber ?? 'No student number'),
+                            Text(
+                              'Coordinator: ${student.coordinatorName ?? 'Unassigned'}',
+                            ),
+                            const SizedBox(height: 6),
+                            StatusBadge(status, compact: true),
+                          ],
+                        ),
+                        trailing:
+                            actions ?? const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _openStudent(student),
+                      );
+                    }
+                    return InkWell(
+                      onTap: () => _openStudent(student),
+                      child: _DirectoryRow(
+                        student: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            title,
+                            Text(
+                              student.studentNumber ?? 'No student number',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                        program: Text(student.program ?? 'Program not set'),
+                        coordinator: Text(
+                          student.coordinatorName ?? 'Unassigned',
+                        ),
+                        status: StatusBadge(status, compact: true),
+                        actions: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextButton(
+                              onPressed: () => _openStudent(student),
+                              child: const Text('View'),
+                            ),
+                            ?actions,
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  Widget _heading(String label) => Text(
+    label,
+    style: const TextStyle(
+      color: AppTheme.navy,
+      fontSize: AppTheme.fontCaption,
+      fontWeight: FontWeight.w800,
+    ),
+  );
+
+  Widget? _pendingActions(AppUser student) {
+    if (!widget.actor.role.isCollegeAdmin ||
+        student.enrollmentStatus != 'pending') {
+      return null;
+    }
+    if (_pendingStudentActions.contains(student.uid)) {
+      return const SizedBox.square(
+        dimension: 22,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return PopupMenuButton<String>(
+      tooltip: 'Pending student actions',
+      onSelected: (action) => _managePendingStudent(student, action),
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'resend',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.mark_email_read_outlined),
+            title: Text('Resend activation email'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'remove',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.person_remove_outlined),
+            title: Text('Remove pending student'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openStudent(AppUser student) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('Student Profile')),
+        body: Padding(
+          padding: const EdgeInsets.all(20),
+          child: StudentInternshipProfileScreen(
+            actor: widget.actor,
+            student: student,
+            repository: widget.repository,
+          ),
+        ),
+      ),
+    ),
+  );
   String _initials(String value) => value
       .trim()
       .split(RegExp(r'\s+'))
       .take(2)
       .map((part) => part.isEmpty ? '' : part[0].toUpperCase())
       .join();
+}
+
+class _AddStudentDialog extends StatefulWidget {
+  const _AddStudentDialog({required this.repository});
+
+  final PracticumRepository repository;
+
+  @override
+  State<_AddStudentDialog> createState() => _AddStudentDialogState();
+}
+
+class _AddStudentDialogState extends State<_AddStudentDialog> {
+  static final _mailbox = RegExp(r'^[^\s<>,;@]+@[^\s<>,;@]+\.[^\s<>,;@]+$');
+
+  final _form = GlobalKey<FormState>();
+  final _row = <String, String>{};
+  bool _sending = false;
+  String? _error;
+
+  Future<void> _sendInvitation() async {
+    if (_sending || !_form.currentState!.validate()) return;
+    _form.currentState!.save();
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+
+    try {
+      final result = await widget.repository.importStudentRoster([
+        _row,
+      ], preview: false);
+      if (!mounted) return;
+      final message = switch (result['invitation']) {
+        'sent' => 'Invitation sent to ${_row['email']}.',
+        'already_invited' =>
+          'This student already has a pending invitation. Use their record to resend it.',
+        'already_active' => 'This student already has an active account.',
+        _ => 'Student roster entry processed.',
+      };
+      Navigator.of(context).pop(message);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _error = error is StateError
+            ? error.message
+            : 'The request could not be confirmed. You can retry with the same details.';
+      });
+    }
+  }
+
+  Widget _field(
+    String field,
+    String label, {
+    String? requiredMessage,
+    bool email = false,
+    TextCapitalization capitalization = TextCapitalization.none,
+  }) => TextFormField(
+    enabled: !_sending,
+    autovalidateMode: AutovalidateMode.onUserInteraction,
+    textCapitalization: capitalization,
+    keyboardType: email ? TextInputType.emailAddress : TextInputType.text,
+    textInputAction: TextInputAction.next,
+    decoration: InputDecoration(
+      labelText: requiredMessage == null ? label : '$label *',
+    ),
+    validator: (input) {
+      final value = (input ?? '').trim();
+      if (value.isEmpty) return requiredMessage;
+      if (email && !_mailbox.hasMatch(value))
+        return 'Enter a valid email address.';
+      return null;
+    },
+    onSaved: (input) => _row[field] = (input ?? '').trim(),
+  );
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_sending,
+    child: AlertDialog(
+      scrollable: true,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      title: const Text('Add student'),
+      content: SizedBox(
+        width: 456,
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [
+              const Text(
+                'Send the student a link to set their password. Fields marked * are required.',
+              ),
+              _field(
+                'displayName',
+                'Full name',
+                requiredMessage: 'Enter the student’s full name.',
+                capitalization: TextCapitalization.words,
+              ),
+              _field(
+                'studentNumber',
+                'Student number',
+                requiredMessage: 'Enter the student number.',
+              ),
+              _field(
+                'email',
+                'Email address',
+                requiredMessage: 'Enter the student’s email address.',
+                email: true,
+              ),
+              _field(
+                'program',
+                'Program',
+                capitalization: TextCapitalization.words,
+              ),
+              _field('section', 'Section'),
+              _field(
+                'department',
+                'Department',
+                capitalization: TextCapitalization.words,
+              ),
+              _field('academicYear', 'Academic year'),
+              if (_error != null)
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: AppTheme.danger),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _sending ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _sending ? null : _sendInvitation,
+          child: Text(_sending ? 'Sending invitation…' : 'Send invitation'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _DirectoryRow extends StatelessWidget {
+  const _DirectoryRow({
+    required this.student,
+    required this.program,
+    required this.coordinator,
+    required this.status,
+    required this.actions,
+  });
+
+  final Widget student;
+  final Widget program;
+  final Widget coordinator;
+  final Widget status;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 52),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(flex: 3, child: student),
+          const SizedBox(width: 14),
+          Expanded(flex: 3, child: program),
+          const SizedBox(width: 14),
+          Expanded(flex: 2, child: coordinator),
+          const SizedBox(width: 14),
+          Expanded(
+            flex: 2,
+            child: Align(alignment: Alignment.centerLeft, child: status),
+          ),
+          SizedBox(
+            width: 120,
+            child: Align(alignment: Alignment.centerRight, child: actions),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class StudentInternshipProfileScreen extends StatefulWidget {

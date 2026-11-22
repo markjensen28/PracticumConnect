@@ -25,7 +25,9 @@ export function normalizeRoster(rows) {
     const displayName = String(row.displayName || '').trim();
     if (
       !studentNumber ||
+      typeof row.displayName !== 'string' ||
       !displayName ||
+      typeof row.email !== 'string' ||
       !singleMailbox(email) ||
       numbers.has(studentNumber) ||
       emails.has(email)
@@ -104,9 +106,9 @@ export async function provisionStudent(db, auth, row, { resend = false, deliver 
           numberKey(user.data().studentNumber) !== studentNumber))
     )
       throw new Error('Roster identity conflict.');
-    if (saved?.status === 'active') return 'skip';
+    if (saved?.status === 'active') return 'already_active';
     if (saved?.leaseUntil > Date.now()) throw new Error('An import is already processing this row.');
-    if (saved?.invitedAt && !resend) return 'skip';
+    if (saved?.invitedAt && !resend) return 'already_invited';
     tx.set(emailRef, { uid });
     tx.set(rosterRef, { uid, email, studentNumber, lease, leaseUntil: Date.now() + 600000 }, { merge: true });
     if (saved?.status === 'pending') return 'send';
@@ -128,7 +130,7 @@ export async function provisionStudent(db, auth, row, { resend = false, deliver 
     );
     return 'prepare';
   });
-  if (mode === 'skip') return;
+  if (mode === 'already_active' || mode === 'already_invited') return mode;
   try {
     if (mode === 'prepare') {
       const password = randomBytes(48).toString('base64url');
@@ -155,6 +157,7 @@ export async function provisionStudent(db, auth, row, { resend = false, deliver 
       text: `Hello ${displayName},\n\nYour school has enrolled you in Practicum Connect. Set your password using the private Firebase link below, then sign in with this address at ${process.env.APP_ORIGIN}. If prompted, verify your email before signing in again.\n\n${link}`,
     });
     await rosterRef.update({ invitedAt: FieldValue.serverTimestamp() });
+    return 'sent';
   } finally {
     await db.runTransaction(async (tx) => {
       if ((await tx.get(rosterRef)).data()?.lease === lease)

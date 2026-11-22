@@ -1,3 +1,5 @@
+import nodemailer from 'nodemailer';
+
 export function singleMailbox(value) {
   return typeof value === 'string' && /^[^\s<>,;@]+@[^\s<>,;@]+\.[^\s<>,;@]+$/.test(value);
 }
@@ -10,19 +12,62 @@ function gmailCredentials() {
   };
 }
 
+function gmailSmtpCredentials() {
+  return {
+    user: process.env.GMAIL_SMTP_USER?.trim(),
+    pass: process.env.GMAIL_SMTP_APP_PASSWORD?.replace(/\s+/g, ''),
+  };
+}
+
+function studentEmailProvider() {
+  return process.env.STUDENT_EMAIL_PROVIDER?.trim() || 'resend';
+}
+
 export function studentEmailConfigured() {
-  const provider = process.env.STUDENT_EMAIL_PROVIDER?.trim() || 'resend';
+  const provider = studentEmailProvider();
   if (provider === 'gmail') return Object.values(gmailCredentials()).every(Boolean);
+  if (provider === 'gmail_smtp') {
+    const { user, pass } = gmailSmtpCredentials();
+    return singleMailbox(user) && /^[a-z0-9]{16}$/i.test(pass ?? '');
+  }
   return provider === 'resend' && Boolean(process.env.RESEND_API_KEY && process.env.SCHOOL_EMAIL_FROM);
 }
 
 export async function sendStudentEmail(message) {
   if (!studentEmailConfigured()) throw new Error('Student email delivery is not configured.');
-  if (process.env.STUDENT_EMAIL_PROVIDER?.trim() !== 'gmail') return sendSchoolEmail(message);
+  const provider = studentEmailProvider();
+  if (provider === 'resend') return sendSchoolEmail(message);
 
   const { to, subject, text } = message;
   if (!singleMailbox(to)) throw new Error('A single valid recipient address is required.');
   if (!/^[\x20-\x7e]{1,200}$/.test(subject)) throw new Error('Invalid invitation subject.');
+  if (provider === 'gmail_smtp') {
+    const auth = gmailSmtpCredentials();
+    const transport = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 12000,
+    });
+    try {
+      const result = await transport.sendMail({
+        from: { name: 'Practicum Connect', address: auth.user },
+        to,
+        subject,
+        text,
+      });
+      if (!result.accepted.length) throw new Error('Recipient rejected.');
+    } catch (error) {
+      if (error.code === 'EAUTH') {
+        throw new Error('Gmail refused the sign-in. Check the sender address and Gmail app password.');
+      }
+      throw new Error('Gmail could not send the invitation. Try again from the pending student record.');
+    }
+    return;
+  }
 
   const authorization = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',

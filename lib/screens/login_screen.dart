@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
+import '../core/ssu_brand.dart';
 import '../services/app_controller.dart';
 
-const _authBlue = Color(0xFF0866F5);
-const _authInk = Color(0xFF14233D);
-const _authLine = Color(0xFFDDE3EB);
+const _authNavy = AppTheme.navy;
+const _authBlue = Color(0xFF1458AC);
+const _authLine = Color(0xFFD2DDEB);
+const _authTint = Color(0xFFEAF2FC);
 
 enum _AuthView { login, signUp, forgotPassword }
 
@@ -72,7 +74,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submitLogin() async {
-    if (!_loginFormKey.currentState!.validate()) return;
+    if (widget.controller.busy || !_loginFormKey.currentState!.validate()) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     await widget.controller.signIn(_loginEmail.text, _loginPassword.text);
   }
@@ -83,7 +87,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submitSignUp() async {
-    if (!_signUpFormKey.currentState!.validate()) return;
+    if (widget.controller.busy || !_signUpFormKey.currentState!.validate()) {
+      return;
+    }
     FocusScope.of(context).unfocus();
 
     final success = await widget.controller.registerCoordinatorRequest(
@@ -107,54 +113,65 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.white,
-    body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final minHeight = constraints.maxHeight > 36
-              ? constraints.maxHeight - 36
-              : 0.0;
-          return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: minHeight),
-              child: Center(
+    backgroundColor: _authTint,
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        const _AuthBackdrop(),
+        SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 600;
+              final inset = compact ? 20.0 : 28.0;
+              final verticalInset = compact ? 36.0 : 42.0;
+              return SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: inset,
+                  vertical: verticalInset,
+                ),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 390),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const _AuthBrand(),
-                        const SizedBox(height: 32),
-                        _authPanel(),
-                      ],
+                  constraints: BoxConstraints(
+                    minHeight: (constraints.maxHeight - 2 * verticalInset)
+                        .clamp(0.0, double.infinity),
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 540),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _AuthBrand(compact: compact),
+                          SizedBox(height: compact ? 22 : 28),
+                          _authPanel(compact ? 18 : 26),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
-    ),
-  );
-
-  Widget _authPanel() => Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [
-        BoxShadow(
-          color: _authInk.withValues(alpha: .08),
-          blurRadius: 20,
-          offset: const Offset(0, 6),
+              );
+            },
+          ),
         ),
       ],
     ),
-    clipBehavior: Clip.antiAlias,
+  );
+
+  Widget _authPanel(double inset) => Container(
+    padding: EdgeInsets.fromLTRB(inset, 8, inset, 0),
+    decoration: BoxDecoration(
+      color: const Color(0xF0FFFFFF),
+      borderRadius: BorderRadius.circular(22),
+      boxShadow: [
+        BoxShadow(
+          color: _authNavy.withValues(alpha: .17),
+          blurRadius: 30,
+          offset: const Offset(0, 12),
+        ),
+      ],
+    ),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -165,12 +182,16 @@ class _LoginScreenState extends State<LoginScreen> {
               _AuthTabButton(
                 label: 'Log In',
                 selected: _view == _AuthView.login,
-                onPressed: () => _setView(_AuthView.login),
+                onPressed: widget.controller.busy
+                    ? null
+                    : () => _setView(_AuthView.login),
               ),
               _AuthTabButton(
                 label: 'Sign Up',
                 selected: _view == _AuthView.signUp,
-                onPressed: () => _setView(_AuthView.signUp),
+                onPressed: widget.controller.busy
+                    ? null
+                    : () => _setView(_AuthView.signUp),
               ),
             ],
           ),
@@ -182,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen> {
   );
 
   Widget _loginForm() => Padding(
-    padding: const EdgeInsets.fromLTRB(15, 16, 15, 15),
+    padding: const EdgeInsets.only(top: 20, bottom: 12),
     child: Form(
       key: _loginFormKey,
       child: Column(
@@ -194,7 +215,7 @@ class _LoginScreenState extends State<LoginScreen> {
               message: widget.controller.error!,
               onDismiss: widget.controller.clearError,
             ),
-            const SizedBox(height: 11),
+            const SizedBox(height: 12),
           ],
           TextFormField(
             controller: _loginEmail,
@@ -205,7 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: _authDecoration('Email', Icons.mail_outline_rounded),
             validator: _validateEmail,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           TextFormField(
             controller: _loginPassword,
             enabled: !widget.controller.busy,
@@ -227,31 +248,32 @@ class _LoginScreenState extends State<LoginScreen> {
                   _hideLoginPassword
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
-                  size: 18,
+                  size: 21,
                 ),
               ),
             ),
             validator: (value) =>
                 value == null || value.isEmpty ? 'Enter your password.' : null,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _primaryButton(
-            label: 'Log In',
+            label: widget.controller.busy ? 'Logging in' : 'Log In',
             busy: widget.controller.busy,
             onPressed: _submitLogin,
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: () => _setView(_AuthView.forgotPassword),
+              onPressed: widget.controller.busy
+                  ? null
+                  : () => _setView(_AuthView.forgotPassword),
               style: TextButton.styleFrom(
-                foregroundColor: _authBlue,
-                minimumSize: Size.zero,
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: _authNavy,
+                minimumSize: const Size(0, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 textStyle: const TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                   decoration: TextDecoration.underline,
                 ),
@@ -265,7 +287,7 @@ class _LoginScreenState extends State<LoginScreen> {
   );
 
   Widget _forgotPasswordForm() => Padding(
-    padding: const EdgeInsets.fromLTRB(15, 16, 15, 14),
+    padding: const EdgeInsets.only(top: 18, bottom: 12),
     child: Form(
       key: _forgotPasswordFormKey,
       child: Column(
@@ -275,12 +297,12 @@ class _LoginScreenState extends State<LoginScreen> {
           Text(
             'Forgot password',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: _authInk,
-              fontSize: 16,
+              color: _authNavy,
+              fontSize: 22,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 16),
           TextFormField(
             controller: _resetEmail,
             keyboardType: TextInputType.emailAddress,
@@ -290,22 +312,20 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: _authDecoration('Email', Icons.mail_outline_rounded),
             validator: _validateEmail,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _primaryButton(
             label: 'Send Reset Link',
             busy: false,
             onPressed: _submitPasswordReset,
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           Align(
             alignment: Alignment.center,
             child: TextButton(
               onPressed: () => _setView(_AuthView.login),
               style: TextButton.styleFrom(
-                foregroundColor: _authBlue,
-                minimumSize: Size.zero,
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: _authNavy,
+                minimumSize: const Size(0, 44),
               ),
               child: const Text('Back to Log In'),
             ),
@@ -318,7 +338,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _signUpForm() {
     final student = _signUpRole == _SignUpRole.student;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(15, 15, 15, 15),
+      padding: const EdgeInsets.only(top: 18, bottom: 24),
       child: Form(
         key: _signUpFormKey,
         child: Column(
@@ -330,7 +350,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 message: widget.controller.error!,
                 onDismiss: widget.controller.clearError,
               ),
-              const SizedBox(height: 11),
+              const SizedBox(height: 12),
             ],
             SegmentedButton<_SignUpRole>(
               showSelectedIcon: false,
@@ -348,28 +368,27 @@ class _LoginScreenState extends State<LoginScreen> {
               onSelectionChanged: widget.controller.busy
                   ? null
                   : (selection) => _setSignUpRole(selection.first),
-              style: ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                padding: const WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              style: SegmentedButton.styleFrom(
+                foregroundColor: AppTheme.muted,
+                selectedForegroundColor: _authNavy,
+                backgroundColor: Colors.white,
+                selectedBackgroundColor: _authTint,
+                minimumSize: const Size(0, 44),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
-                textStyle: const WidgetStatePropertyAll(
-                  TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-                side: const WidgetStatePropertyAll(
-                  BorderSide(color: _authLine),
-                ),
-                shape: WidgetStatePropertyAll(
-                  RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(7),
-                  ),
+                side: const BorderSide(color: _authLine),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
-            const SizedBox(height: 11),
+            const SizedBox(height: 16),
             if (student)
               const Text(
                 'Student accounts are created from the official school roster. Open your invitation email to set your password, then sign in. Contact your coordinator if you need an invitation.',
+                style: TextStyle(color: AppTheme.muted, height: 1.55),
               )
             else ...[
               TextFormField(
@@ -386,38 +405,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? 'Enter your full name.'
                     : null,
               ),
-              const SizedBox(height: 10),
-              Column(
-                children: [
-                  TextFormField(
-                    controller: _staffId,
-                    enabled: !widget.controller.busy,
-                    textInputAction: TextInputAction.next,
-                    decoration: _authDecoration(
-                      'Faculty ID',
-                      Icons.badge_outlined,
-                    ),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? 'Enter your faculty ID.'
-                        : null,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _department,
-                    enabled: !widget.controller.busy,
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                    decoration: _authDecoration(
-                      'Department',
-                      Icons.account_balance_outlined,
-                    ),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? 'Enter your department.'
-                        : null,
-                  ),
-                ],
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _staffId,
+                enabled: !widget.controller.busy,
+                textInputAction: TextInputAction.next,
+                decoration: _authDecoration('Faculty ID', Icons.badge_outlined),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Enter your faculty ID.'
+                    : null,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _department,
+                enabled: !widget.controller.busy,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                decoration: _authDecoration(
+                  'Department',
+                  Icons.account_balance_outlined,
+                ),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Enter your department.'
+                    : null,
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _signUpEmail,
                 enabled: !widget.controller.busy,
@@ -430,7 +442,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 validator: _validateEmail,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _signUpPassword,
                 enabled: !widget.controller.busy,
@@ -453,7 +465,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       _hideSignUpPassword
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined,
-                      size: 18,
+                      size: 21,
                     ),
                   ),
                 ),
@@ -461,7 +473,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? 'Use at least six characters.'
                     : null,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _confirmPassword,
                 enabled: !widget.controller.busy,
@@ -477,7 +489,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? 'Passwords do not match.'
                     : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               _primaryButton(
                 label: widget.controller.busy
                     ? 'Sending request'
@@ -496,52 +508,117 @@ class _LoginScreenState extends State<LoginScreen> {
     required String label,
     required bool busy,
     required VoidCallback onPressed,
-  }) => SizedBox(
-    height: 42,
-    child: FilledButton(
-      onPressed: busy ? null : onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: _authBlue,
-        foregroundColor: Colors.white,
-        disabledBackgroundColor: _authBlue.withValues(alpha: .65),
-        disabledForegroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-      ),
-      child: busy
-          ? const SizedBox.square(
-              dimension: 17,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            )
-          : Text(label),
+  }) => FilledButton(
+    onPressed: busy ? null : onPressed,
+    style: FilledButton.styleFrom(
+      minimumSize: const Size(0, 52),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      backgroundColor: _authNavy,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: _authNavy.withValues(alpha: .75),
+      disabledForegroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
     ),
+    child: busy
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Flexible(child: Text(label)),
+            ],
+          )
+        : Text(label),
   );
 }
 
 class _AuthBrand extends StatelessWidget {
-  const _AuthBrand();
+  const _AuthBrand({required this.compact});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      const Icon(Icons.hub_outlined, color: _authBlue, size: 38),
-      const SizedBox(height: 8),
-      Text(
-        'Practicum Connect',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-          color: _authInk,
-          fontSize: 22,
-          fontWeight: FontWeight.w900,
-          letterSpacing: -.45,
+      SsuSeal(size: compact ? 104 : 132),
+      SizedBox(height: compact ? 16 : 20),
+      Semantics(
+        header: true,
+        child: Text(
+          'Practicum Connect',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+            color: _authNavy,
+            fontSize: compact ? 33 : 44,
+            fontWeight: FontWeight.w800,
+            height: 1.1,
+            letterSpacing: compact ? -.65 : -1,
+          ),
         ),
       ),
     ],
   );
+}
+
+class _AuthBackdrop extends StatelessWidget {
+  const _AuthBackdrop();
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      Image.asset(
+        'assets/ssu-photo.jpg',
+        fit: BoxFit.cover,
+        alignment: const Alignment(.3, -.25),
+        excludeFromSemantics: true,
+      ),
+      const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x9FEAF4FF), Color(0xB8F4F8FE), Color(0x62E6EFFA)],
+            stops: [0, .44, 1],
+          ),
+        ),
+      ),
+      const CustomPaint(painter: _AuthCornerPainter()),
+    ],
+  );
+}
+
+class _AuthCornerPainter extends CustomPainter {
+  const _AuthCornerPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final topWidth = (size.width * .56).clamp(0.0, 610.0);
+    final bottomWidth = (size.width * .66).clamp(0.0, 730.0);
+
+    const SsuRibbonPainter().paint(
+      canvas,
+      Size(topWidth, (topWidth * .37).clamp(0.0, 164.0)),
+    );
+    final bottomHeight = (bottomWidth * .33).clamp(0.0, 148.0);
+    canvas.save();
+    canvas.translate(size.width - bottomWidth, size.height - bottomHeight);
+    const SsuRibbonPainter(
+      bottomRight: true,
+    ).paint(canvas, Size(bottomWidth, bottomHeight));
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_AuthCornerPainter oldDelegate) => false;
 }
 
 class _AuthTabButton extends StatelessWidget {
@@ -553,39 +630,46 @@ class _AuthTabButton extends StatelessWidget {
 
   final String label;
   final bool selected;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) => Expanded(
     child: Semantics(
       button: true,
+      enabled: onPressed != null,
       selected: selected,
-      label: label,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
+          focusColor: _authTint,
+          hoverColor: _authTint.withValues(alpha: .55),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                height: 41,
-                child: Center(
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(
                     label,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       color: selected ? _authBlue : AppTheme.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                     ),
                   ),
                 ),
               ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                height: 2,
-                color: selected ? _authBlue : Colors.transparent,
+              Container(
+                width: double.infinity,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: selected ? _authBlue : _authLine,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ],
           ),
@@ -608,7 +692,7 @@ class _AuthError extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
       decoration: BoxDecoration(
         color: const Color(0xFFFFF3F3),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -621,14 +705,13 @@ class _AuthError extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: AppTheme.text, fontSize: 11.5),
+              style: const TextStyle(color: AppTheme.text, fontSize: 14),
             ),
           ),
           IconButton(
             tooltip: 'Dismiss',
-            visualDensity: VisualDensity.compact,
             onPressed: onDismiss,
-            icon: const Icon(Icons.close_rounded, size: 16),
+            icon: const Icon(Icons.close_rounded, size: 18),
           ),
         ],
       ),
@@ -639,27 +722,26 @@ class _AuthError extends StatelessWidget {
 InputDecoration _authDecoration(String label, IconData icon, {Widget? suffix}) {
   OutlineInputBorder border(Color color, [double width = 1]) =>
       OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(11),
         borderSide: BorderSide(color: color, width: width),
       );
 
   return InputDecoration(
     labelText: label,
-    prefixIcon: Icon(icon, size: 17),
-    prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+    prefixIcon: Icon(icon, size: 21),
+    prefixIconColor: _authNavy,
+    prefixIconConstraints: const BoxConstraints(minWidth: 52, minHeight: 54),
     suffixIcon: suffix,
-    suffixIconConstraints: suffix == null
-        ? null
-        : const BoxConstraints(minWidth: 40, minHeight: 40),
+    suffixIconColor: _authNavy,
     isDense: true,
     filled: true,
     fillColor: Colors.white,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-    labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 11.5),
-    floatingLabelStyle: const TextStyle(color: _authBlue, fontSize: 11),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+    labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 16),
+    floatingLabelStyle: const TextStyle(color: _authBlue, fontSize: 15),
     border: border(_authLine),
     enabledBorder: border(_authLine),
-    focusedBorder: border(_authBlue, 1.3),
+    focusedBorder: border(_authBlue, 1.7),
     errorBorder: border(AppTheme.danger),
     focusedErrorBorder: border(AppTheme.danger, 1.2),
   );

@@ -214,12 +214,12 @@ class _CoordinatorDashboardScreenState
                             ? 'CAS Dashboard'
                             : 'Program Coordinator Dashboard',
                         subtitle: widget.user.role == UserRole.admin
-                            ? 'Monitor CAS internship records, documents, partnerships, status, and college-wide activity.'
+                            ? 'Monitor CAS internship records, documents, partnerships, and activity.'
                             : 'Monitor assigned interns, review requirements, and track internship progress.',
                         eyebrow: 'Home  ›  Dashboard',
                         actions: [
                           SizedBox(
-                            width: 178,
+                            width: 168,
                             child: DropdownButtonFormField<String>(
                               isExpanded: true,
                               initialValue: effectiveAcademicYear,
@@ -231,7 +231,9 @@ class _CoordinatorDashboardScreenState
                                     (value) => DropdownMenuItem(
                                       value: value,
                                       child: Text(
-                                        value,
+                                        value == 'All Academic Years'
+                                            ? 'All years'
+                                            : value,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -245,7 +247,7 @@ class _CoordinatorDashboardScreenState
                             ),
                           ),
                           SizedBox(
-                            width: 190,
+                            width: 178,
                             child: DropdownButtonFormField<String>(
                               isExpanded: true,
                               initialValue: effectiveProgram,
@@ -276,10 +278,13 @@ class _CoordinatorDashboardScreenState
                               students: students,
                               requirements: requirements,
                               profiles: profiles,
-                              moas: moas,
-                              showMoa: widget.user.role == UserRole.admin,
+                              collegeWide: widget.user.role == UserRole.admin,
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 18),
+                            const DashboardWelcome(
+                              title: 'Welcome to Practicum Connect',
+                            ),
+                            const SizedBox(height: 20),
                             LayoutBuilder(
                               builder: (context, constraints) {
                                 final left = Column(
@@ -335,7 +340,7 @@ class _CoordinatorDashboardScreenState
                                       },
                                     ),
                                     if (widget.user.role == UserRole.admin) ...[
-                                      const SizedBox(height: 10),
+                                      const SizedBox(height: 16),
                                       _PartnerStatus(
                                         moas: moas,
                                         onViewAll: _openMoaManagement,
@@ -349,13 +354,13 @@ class _CoordinatorDashboardScreenState
                                       requirements: requirements,
                                       onViewAll: _openDocumentReview,
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 16),
                                     _DashboardActivity(
                                       repository: widget.repository,
                                       actor: widget.user,
                                       onViewAll: _showActivityHistory,
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 16),
                                     _InternshipDistribution(profiles: profiles),
                                   ],
                                 );
@@ -395,9 +400,9 @@ class _CoordinatorDashboardScreenState
                                   return Column(
                                     children: [
                                       left,
-                                      const SizedBox(height: 10),
+                                      const SizedBox(height: 16),
                                       middle,
-                                      const SizedBox(height: 10),
+                                      const SizedBox(height: 16),
                                       right,
                                     ],
                                   );
@@ -415,7 +420,7 @@ class _CoordinatorDashboardScreenState
                                       ),
                                     ),
                                     const SizedBox(width: 20),
-                                    SizedBox(width: 360, child: right),
+                                    SizedBox(width: 332, child: right),
                                   ],
                                 );
                               },
@@ -440,15 +445,13 @@ class _DashboardStats extends StatelessWidget {
     required this.students,
     required this.requirements,
     required this.profiles,
-    required this.moas,
-    required this.showMoa,
+    required this.collegeWide,
   });
 
   final List<AppUser> students;
   final List<RequirementRecord> requirements;
   final List<InternshipProfileRecord> profiles;
-  final List<MoaRecord> moas;
-  final bool showMoa;
+  final bool collegeWide;
 
   @override
   Widget build(BuildContext context) {
@@ -465,65 +468,37 @@ class _DashboardStats extends StatelessWidget {
     final completed = profiles
         .where((item) => item.status.toLowerCase().contains('complete'))
         .length;
-    final expiring = moas
-        .where((item) => item.status == 'Nearing expiration')
-        .length;
-    final cards = [
-      StatCard(
-        label: 'Total Interns',
-        value: '${students.length}',
-        caption: 'CAS students',
-        icon: Icons.groups_outlined,
-        color: AppTheme.blue,
-      ),
-      StatCard(
-        label: 'For Verification',
-        value: '$forVerification',
-        caption: 'submissions',
-        icon: Icons.pending_actions_outlined,
-        color: AppTheme.purple,
-      ),
-      StatCard(
-        label: 'Ongoing Internship',
-        value: '$ongoing',
-        caption: 'active interns',
-        icon: Icons.timelapse_outlined,
-        color: AppTheme.blue,
-      ),
-      StatCard(
-        label: 'Completed',
-        value: '$completed',
-        caption: 'this school year',
-        icon: Icons.verified_outlined,
-        color: AppTheme.success,
-      ),
-      if (showMoa)
+    return DashboardStatGrid(
+      cards: [
         StatCard(
-          label: 'MOA Expiring Soon',
-          value: '$expiring',
-          caption: 'within 90 days',
-          icon: Icons.warning_amber_outlined,
+          label: 'Total Interns',
+          value: '${students.length}',
+          caption: collegeWide ? 'CAS students' : 'assigned students',
+          icon: Icons.groups_outlined,
+          color: AppTheme.blue,
+        ),
+        StatCard(
+          label: 'For Verification',
+          value: '$forVerification',
+          caption: 'submissions',
+          icon: Icons.pending_actions_outlined,
+          color: AppTheme.purple,
+        ),
+        StatCard(
+          label: 'Ongoing Internship',
+          value: '$ongoing',
+          caption: 'active interns',
+          icon: Icons.timelapse_outlined,
+          color: AppTheme.success,
+        ),
+        StatCard(
+          label: 'Completed',
+          value: '$completed',
+          caption: 'recorded profiles',
+          icon: Icons.verified_outlined,
           color: AppTheme.warning,
         ),
-    ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1120
-            ? cards.length
-            : constraints.maxWidth >= 780
-            ? 3
-            : constraints.maxWidth >= 520
-            ? 2
-            : 1;
-        final width = (constraints.maxWidth - ((columns - 1) * 12)) / columns;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards
-              .map((card) => SizedBox(width: width, child: card))
-              .toList(),
-        );
-      },
+      ],
     );
   }
 }
@@ -553,85 +528,151 @@ class _RecentSubmissions extends StatelessWidget {
               padding: EdgeInsets.all(14),
               child: Text('No submissions yet.'),
             )
-          : Column(
-              children: [
-                Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  color: AppTheme.surfaceSoft,
-                  child: const Row(
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 600) {
+                  return Column(
                     children: [
-                      Expanded(flex: 3, child: Text('Student', style: _head)),
-                      Expanded(
-                        flex: 3,
-                        child: Text('Requirement', style: _head),
-                      ),
-                      Expanded(flex: 2, child: Text('Submitted', style: _head)),
-                      Expanded(flex: 2, child: Text('Status', style: _head)),
-                      SizedBox(width: 64, child: Text('Action', style: _head)),
+                      for (final record in records) ...[
+                        const Divider(),
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          title: Text(
+                            record.studentName,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(record.title),
+                              const SizedBox(height: 5),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  StatusBadge(
+                                    record.status.label,
+                                    compact: true,
+                                  ),
+                                  Text(
+                                    DateFormat.MMMd().format(
+                                      record.submittedAt,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          trailing: TextButton(
+                            onPressed: () => onView(record),
+                            child: const Text('View'),
+                          ),
+                          onTap: () => onSelect(record),
+                        ),
+                      ],
                     ],
-                  ),
-                ),
-                ...records.map(
-                  (record) => InkWell(
-                    onTap: () => onSelect(record),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: const BoxDecoration(
-                        border: Border(top: BorderSide(color: AppTheme.border)),
-                      ),
-                      child: Row(
+                  );
+                }
+
+                return Column(
+                  children: [
+                    Container(
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      color: AppTheme.surfaceBlue,
+                      child: const Row(
                         children: [
                           Expanded(
                             flex: 3,
-                            child: Text(
-                              record.studentName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: AppTheme.fontCaption,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                            child: Text('Student', style: _head),
                           ),
-                          Expanded(flex: 3, child: _cell(record.title)),
                           Expanded(
-                            flex: 2,
-                            child: _cell(
-                              DateFormat.MMMd().format(record.submittedAt),
-                            ),
+                            flex: 3,
+                            child: Text('Requirement', style: _head),
                           ),
                           Expanded(
                             flex: 2,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: StatusBadge(
-                                record.status.label,
-                                compact: true,
-                              ),
-                            ),
+                            child: Text('Submitted', style: _head),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text('Status', style: _head),
                           ),
                           SizedBox(
                             width: 64,
-                            child: TextButton(
-                              onPressed: () => onView(record),
-                              child: const Text(
-                                'View',
-                                style: TextStyle(
-                                  fontSize: AppTheme.fontCaption,
-                                ),
-                              ),
-                            ),
+                            child: Text('Action', style: _head),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ),
-              ],
+                    ...records.map(
+                      (record) => InkWell(
+                        onTap: () => onSelect(record),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              top: BorderSide(color: AppTheme.border),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: Text(
+                                  record.studentName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: AppTheme.fontCaption,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Expanded(flex: 3, child: _cell(record.title)),
+                              Expanded(
+                                flex: 2,
+                                child: _cell(
+                                  DateFormat.MMMd().format(record.submittedAt),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: StatusBadge(
+                                    record.status.label,
+                                    compact: true,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 64,
+                                child: TextButton(
+                                  onPressed: () => onView(record),
+                                  child: const Text(
+                                    'View',
+                                    style: TextStyle(
+                                      fontSize: AppTheme.fontCaption,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
     );
   }
@@ -750,6 +791,8 @@ class _PartnerStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SectionCard(
     title: 'Partner Institutions & MOA Status',
+    subtitle:
+        '${moas.where((record) => record.status == 'Nearing expiration').length} agreements expire within 90 days',
     trailing: TextButton(onPressed: onViewAll, child: const Text('View All')),
     padding: EdgeInsets.zero,
     child: moas.isEmpty
@@ -1260,7 +1303,7 @@ class _StudentSummaryState extends State<_StudentSummary> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Verified requirements ? ${compliance.label}'),
+                    Text('${compliance.label} requirements verified'),
                     if (compliance.hasYear && compliance.assigned > 0) ...[
                       const SizedBox(height: 6),
                       LinearProgressIndicator(

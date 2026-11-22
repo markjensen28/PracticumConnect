@@ -2,23 +2,24 @@ import 'package:flutter/material.dart';
 
 class AppTheme {
   // Shared workspace palette
-  static const navy = Color(0xFF1C304A);
-  static const blue = Color(0xFF315BCB);
-  static const deepBlue = Color(0xFF2449AC);
-  static const sky = Color(0xFFEEF3FF);
+  static const navy = Color(0xFF092B58);
+  static const blue = Color(0xFF135FBC);
+  static const deepBlue = Color(0xFF144D92);
+  static const gold = Color(0xFFF8C649);
+  static const sky = Color(0xFFE3EEFF);
 
   // Light surfaces
-  static const background = Color(0xFFF2F5F9);
+  static const background = Color(0xFFEDF3FC);
   static const surface = Colors.white;
-  static const surfaceSoft = Color(0xFFF7F9FC);
-  static const surfaceBlue = Color(0xFFEDF2FF);
-  static const border = Color(0xFFDCE3ED);
-  static const borderStrong = Color(0xFFBBC8DA);
+  static const surfaceSoft = Color(0xFFF4F7FD);
+  static const surfaceBlue = Color(0xFFEAF2FF);
+  static const border = Color(0xFFD6E2F2);
+  static const borderStrong = Color(0xFFB5C8E1);
 
   // Text
-  static const text = Color(0xFF202F43);
-  static const muted = Color(0xFF526176);
-  static const subtle = Color(0xFF617086);
+  static const text = Color(0xFF142C49);
+  static const muted = Color(0xFF4A5E79);
+  static const subtle = Color(0xFF536880);
 
   // States
   static const success = Color(0xFF18734D);
@@ -27,8 +28,8 @@ class AppTheme {
   static const purple = Color(0xFF6950A1);
 
   static const double contentMaxWidth = 1600;
-  static const double cardRadius = 12;
-  static const double controlRadius = 8;
+  static const double cardRadius = 14;
+  static const double controlRadius = 9;
 
   static const double fontCaption = 13;
   static const double fontSmall = 14;
@@ -61,7 +62,7 @@ class AppTheme {
       textTheme: base.textTheme.copyWith(
         headlineLarge: const TextStyle(
           color: navy,
-          fontSize: 30,
+          fontSize: 34,
           fontWeight: FontWeight.w800,
           letterSpacing: -0.65,
         ),
@@ -73,9 +74,9 @@ class AppTheme {
         ),
         headlineSmall: const TextStyle(
           color: navy,
-          fontSize: 28,
+          fontSize: 30,
           fontWeight: FontWeight.w800,
-          letterSpacing: -0.3,
+          letterSpacing: -0.65,
         ),
         titleLarge: const TextStyle(
           color: text,
@@ -231,9 +232,9 @@ class AppTheme {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       ),
       dataTableTheme: const DataTableThemeData(
-        headingRowColor: WidgetStatePropertyAll(surfaceSoft),
+        headingRowColor: WidgetStatePropertyAll(surfaceBlue),
         headingTextStyle: TextStyle(
-          color: Color(0xFF475467),
+          color: navy,
           fontSize: fontCaption,
           fontWeight: FontWeight.w700,
         ),
@@ -244,6 +245,11 @@ class AppTheme {
         headingRowHeight: 48,
         dataRowMinHeight: 48,
         dataRowMaxHeight: 88,
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: blue,
+        selectionColor: blue.withValues(alpha: .18),
+        selectionHandleColor: blue,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: surface,

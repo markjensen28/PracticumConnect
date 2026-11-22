@@ -1295,7 +1295,9 @@ class _DocumentSubmissionBinScreenState
                             (value) => DropdownMenuItem(
                               value: value,
                               child: Text(
-                                value,
+                                value == 'All Document Types'
+                                    ? 'All types'
+                                    : value,
                                 style: const TextStyle(
                                   fontSize: AppTheme.fontBody,
                                 ),
@@ -2746,6 +2748,7 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
           ];
 
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               WorkspaceTabs(
                 labels: const [
@@ -2832,28 +2835,33 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                           ),
                           const SizedBox(height: 9),
                           Expanded(
-                            child: _RepositoryList(
-                              compact: constraints.maxWidth < 600,
-                              records: records,
-                              selected: selected,
-                              onSelect: (record) {
-                                setState(() => _selected = record);
-                                if (narrow) {
-                                  showModalBottomSheet<void>(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    builder: (_) => FractionallySizedBox(
-                                      heightFactor: 0.8,
-                                      child: SingleChildScrollView(
-                                        child: _RepositoryDetails(
-                                          record: record,
-                                          repository: widget.repository,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
+                            child: LayoutBuilder(
+                              builder: (context, listConstraints) =>
+                                  _RepositoryList(
+                                    compact: listConstraints.maxWidth < 590,
+                                    showMetadata:
+                                        listConstraints.maxWidth >= 790,
+                                    records: records,
+                                    selected: selected,
+                                    onSelect: (record) {
+                                      setState(() => _selected = record);
+                                      if (narrow) {
+                                        showModalBottomSheet<void>(
+                                          context: context,
+                                          isScrollControlled: true,
+                                          builder: (_) => FractionallySizedBox(
+                                            heightFactor: 0.8,
+                                            child: SingleChildScrollView(
+                                              child: _RepositoryDetails(
+                                                record: record,
+                                                repository: widget.repository,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
                             ),
                           ),
                         ],
@@ -2951,7 +2959,7 @@ class _RepositoryFilters extends StatelessWidget {
               controller: queryController,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search, size: 18),
-                hintText: 'Search by file name, student name/number, keyword…',
+                hintText: 'Search files or students',
               ),
               onChanged: queryChanged,
             ),
@@ -3031,11 +3039,13 @@ class _RepositoryList extends StatelessWidget {
   const _RepositoryList({
     required this.records,
     required this.compact,
+    required this.showMetadata,
     required this.selected,
     required this.onSelect,
   });
 
   final bool compact;
+  final bool showMetadata;
   final List<RequirementRecord> records;
   final RequirementRecord? selected;
   final ValueChanged<RequirementRecord> onSelect;
@@ -3071,44 +3081,39 @@ class _RepositoryList extends StatelessWidget {
         : Column(
             children: [
               Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                color: AppTheme.surfaceSoft,
-                child: const Row(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                color: AppTheme.surfaceBlue,
+                child: Row(
+                  spacing: 10,
                   children: [
-                    SizedBox(
-                      width: 28,
-                      child: Icon(
-                        Icons.check_box_outline_blank,
-                        size: 14,
-                        color: AppTheme.muted,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
+                    const Expanded(
+                      flex: 4,
                       child: Text('File Name', style: _headerStyle),
                     ),
-                    Expanded(
-                      flex: 2,
+                    const Expanded(
+                      flex: 3,
                       child: Text('Student', style: _headerStyle),
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Program', style: _headerStyle),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Category', style: _headerStyle),
-                    ),
-                    Expanded(
-                      flex: 2,
+                    if (showMetadata) ...const [
+                      Expanded(
+                        flex: 3,
+                        child: Text('Program', style: _headerStyle),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text('Category', style: _headerStyle),
+                      ),
+                    ],
+                    const Expanded(
+                      flex: 3,
                       child: Text('Status', style: _headerStyle),
                     ),
-                    Expanded(
-                      flex: 2,
+                    const Expanded(
+                      flex: 3,
                       child: Text('Uploaded', style: _headerStyle),
                     ),
-                    SizedBox(width: 30),
+                    const SizedBox(width: 18),
                   ],
                 ),
               ),
@@ -3120,32 +3125,32 @@ class _RepositoryList extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final record = records[index];
                     final active = selected?.id == record.id;
+                    final pdf =
+                        record.fileName?.toLowerCase().endsWith('.pdf') ??
+                        false;
                     return InkWell(
                       onTap: () => onSelect(record),
-                      child: Container(
+                      child: Ink(
                         color: active ? AppTheme.surfaceBlue : Colors.white,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 14,
+                          vertical: 12,
                         ),
                         child: Row(
+                          spacing: 10,
                           children: [
-                            const SizedBox(
-                              width: 28,
-                              child: Icon(
-                                Icons.check_box_outline_blank,
-                                size: 14,
-                                color: AppTheme.muted,
-                              ),
-                            ),
                             Expanded(
-                              flex: 3,
+                              flex: 4,
                               child: Row(
                                 children: [
-                                  const Icon(
-                                    Icons.picture_as_pdf_outlined,
-                                    size: 15,
-                                    color: AppTheme.danger,
+                                  Icon(
+                                    pdf
+                                        ? Icons.picture_as_pdf_outlined
+                                        : Icons.description_outlined,
+                                    size: 18,
+                                    color: pdf
+                                        ? AppTheme.danger
+                                        : AppTheme.blue,
                                   ),
                                   const SizedBox(width: 6),
                                   Expanded(
@@ -3162,14 +3167,16 @@ class _RepositoryList extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            Expanded(flex: 2, child: _cell(record.studentName)),
+                            Expanded(flex: 3, child: _cell(record.studentName)),
+                            if (showMetadata) ...[
+                              Expanded(
+                                flex: 3,
+                                child: _cell(record.program ?? '—'),
+                              ),
+                              Expanded(flex: 2, child: _cell(record.category)),
+                            ],
                             Expanded(
-                              flex: 2,
-                              child: _cell(record.program ?? '—'),
-                            ),
-                            Expanded(flex: 2, child: _cell(record.category)),
-                            Expanded(
-                              flex: 2,
+                              flex: 3,
                               child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: StatusBadge(
@@ -3179,14 +3186,14 @@ class _RepositoryList extends StatelessWidget {
                               ),
                             ),
                             Expanded(
-                              flex: 2,
+                              flex: 3,
                               child: _cell(shortDate(record.submittedAt)),
                             ),
                             const SizedBox(
-                              width: 30,
+                              width: 18,
                               child: Icon(
-                                Icons.more_horiz,
-                                size: 16,
+                                Icons.chevron_right_rounded,
+                                size: 18,
                                 color: AppTheme.muted,
                               ),
                             ),
@@ -3198,29 +3205,18 @@ class _RepositoryList extends StatelessWidget {
                 ),
               ),
               Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                height: 40,
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: const BoxDecoration(
                   border: Border(top: BorderSide(color: AppTheme.border)),
                 ),
-                child: Row(
-                  children: [
-                    Text(
-                      '${records.length} document${records.length == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        fontSize: AppTheme.fontCaption,
-                        color: AppTheme.muted,
-                      ),
-                    ),
-                    const Spacer(),
-                    const Text(
-                      'Rows per page  10',
-                      style: TextStyle(
-                        fontSize: AppTheme.fontCaption,
-                        color: AppTheme.muted,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  '${records.length} document${records.length == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontSize: AppTheme.fontCaption,
+                    color: AppTheme.muted,
+                  ),
                 ),
               ),
             ],
@@ -3229,7 +3225,7 @@ class _RepositoryList extends StatelessWidget {
 
   static const TextStyle _headerStyle = TextStyle(
     fontSize: AppTheme.fontCaption,
-    color: AppTheme.muted,
+    color: AppTheme.navy,
     fontWeight: FontWeight.w700,
   );
 

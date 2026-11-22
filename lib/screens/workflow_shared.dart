@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
 import '../core/app_theme.dart';
+import '../core/ssu_brand.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
 
@@ -26,91 +27,99 @@ class WorkflowPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      Widget buildHeader() => LayoutBuilder(
-        builder: (context, headerConstraints) {
-          final titleBlock = ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 700),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontSize: headerConstraints.maxWidth < 520 ? 24 : 28,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.navy,
-                    letterSpacing: -.35,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.muted,
-                    fontSize: AppTheme.fontSmall,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          );
-
-          if (actions.isEmpty) return titleBlock;
-
-          if (headerConstraints.maxWidth < 820) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                titleBlock,
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(spacing: 10, runSpacing: 10, children: actions),
-                ),
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: titleBlock),
-              const SizedBox(width: 20),
-              Flexible(
-                child: Align(
-                  alignment: Alignment.topRight,
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: actions,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-
-      Widget buildPage() => Column(
+      final page = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          buildHeader(),
-          const SizedBox(height: 20),
+          WorkspaceHeader(title: title, subtitle: subtitle, actions: actions),
+          const SizedBox(height: 22),
           Expanded(child: child),
         ],
       );
 
-      if (constraints.hasBoundedHeight) return buildPage();
+      if (constraints.hasBoundedHeight) return page;
 
       final screenHeight = MediaQuery.sizeOf(context).height;
       final fallbackHeight = screenHeight > 540 ? screenHeight - 116 : 440.0;
-      return SizedBox(height: fallbackHeight, child: buildPage());
+      return SizedBox(height: fallbackHeight, child: page);
+    },
+  );
+}
+
+class WorkspaceHeader extends StatelessWidget {
+  const WorkspaceHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    this.actions = const [],
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 560;
+      final heading = ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 700),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              container: true,
+              header: true,
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontSize: compact ? 27 : 34,
+                  height: 1.16,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppTheme.muted,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (actions.isEmpty) {
+        return Align(alignment: Alignment.centerLeft, child: heading);
+      }
+
+      final controls = Wrap(
+        alignment: constraints.maxWidth < 820
+            ? WrapAlignment.start
+            : WrapAlignment.end,
+        spacing: 10,
+        runSpacing: 10,
+        children: actions,
+      );
+
+      if (constraints.maxWidth < 820) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [heading, const SizedBox(height: 14), controls],
+        );
+      }
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: heading),
+          const SizedBox(width: 22),
+          Flexible(
+            child: Align(alignment: Alignment.topRight, child: controls),
+          ),
+        ],
+      );
     },
   );
 }
@@ -139,45 +148,61 @@ class SectionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (title != null) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: AppTheme.text,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 17,
-                        ),
-                      ),
-                      if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          subtitle!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.muted,
-                            fontSize: AppTheme.fontSmall,
-                            height: 1.35,
+            Padding(
+              padding: padding == EdgeInsets.zero
+                  ? const EdgeInsets.fromLTRB(18, 12, 12, 0)
+                  : EdgeInsets.zero,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Semantics(
+                          container: true,
+                          header: true,
+                          child: Text(
+                            title!,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: AppTheme.navy,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                ),
                           ),
                         ),
+                        if (subtitle != null &&
+                            subtitle!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.muted,
+                              fontSize: AppTheme.fontSmall,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                if (trailing != null) ...[
-                  const SizedBox(width: 10),
-                  Flexible(child: trailing!),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 10),
+                    Flexible(
+                      flex: 2,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: trailing,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
             const SizedBox(height: 14),
           ],
@@ -204,26 +229,26 @@ class StatusBadge extends StatelessWidget {
     final normalized = label.toLowerCase();
     final color = normalized.contains('reject') || normalized.contains('expire')
         ? AppTheme.danger
+        : normalized == 'for verification' || normalized.contains('review')
+        ? AppTheme.purple
         : normalized.contains('revision') ||
               normalized.contains('near') ||
               normalized.contains('renew') ||
               normalized.contains('pending') ||
-              normalized == 'for verification' ||
               normalized.contains('not submitted')
         ? AppTheme.warning
-        : normalized.contains('review')
-        ? AppTheme.purple
         : normalized == 'verified' ||
               normalized == 'approved' ||
               normalized == 'active' ||
               normalized == 'completed' ||
-              normalized == 'passed'
+              normalized == 'passed' ||
+              normalized.startsWith('ongoing')
         ? AppTheme.success
         : AppTheme.muted;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .09),
-        borderRadius: BorderRadius.circular(6),
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
@@ -264,66 +289,188 @@ class StatCard extends StatelessWidget {
   final String? caption;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .08),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 21),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 220;
+      return Card(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: caption == null ? 96 : 116),
+          child: Padding(
+            padding: EdgeInsets.all(compact ? 11 : 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.muted,
-                    fontSize: AppTheme.fontSmall,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
+                Container(
+                  width: compact ? 38 : 54,
+                  height: compact ? 38 : 54,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .105),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: compact ? 20 : 26),
+                ),
+                SizedBox(width: compact ? 9 : 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: AppTheme.navy,
+                          fontSize: compact
+                              ? AppTheme.fontCaption
+                              : AppTheme.fontSmall,
+                          fontWeight: FontWeight.w700,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        value,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: AppTheme.navy,
+                          fontSize: compact ? 25 : 30,
+                          fontWeight: FontWeight.w800,
+                          height: 1.08,
+                        ),
+                      ),
+                      if (caption != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          caption!,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: AppTheme.fontCaption,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: AppTheme.text,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (caption != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    caption!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: color,
-                      fontSize: AppTheme.fontCaption,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
+        ),
+      );
+    },
+  );
+}
+
+class DashboardStatGrid extends StatelessWidget {
+  const DashboardStatGrid({super.key, required this.cards});
+
+  final List<StatCard> cards;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      const gap = 14.0;
+      final columns = constraints.maxWidth >= 880
+          ? 4
+          : constraints.maxWidth >= 336
+          ? 2
+          : 1;
+      final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          for (final card in cards) SizedBox(width: width, child: card),
         ],
-      ),
-    ),
+      );
+    },
+  );
+}
+
+class DashboardWelcome extends StatelessWidget {
+  const DashboardWelcome({super.key, required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 560;
+      return Card(
+        color: AppTheme.surfaceBlue,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              left: constraints.maxWidth * (compact ? .36 : .52),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/ssu-photo.jpg',
+                    alignment: const Alignment(.65, -.55),
+                    excludeFromSemantics: true,
+                    fit: BoxFit.cover,
+                  ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppTheme.surfaceBlue, Color(0x8AEAF2FF)],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 15 : 23,
+                vertical: compact ? 16 : 18,
+              ),
+              child: Row(
+                children: [
+                  SsuSeal(size: compact ? 54 : 67, decorative: true),
+                  SizedBox(width: compact ? 13 : 18),
+                  SizedBox(
+                    height: compact ? 40 : 48,
+                    child: const VerticalDivider(
+                      width: 2,
+                      thickness: 2,
+                      color: AppTheme.gold,
+                    ),
+                  ),
+                  SizedBox(width: compact ? 13 : 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                color: AppTheme.navy,
+                                fontSize: compact ? 19 : 23,
+                                fontWeight: FontWeight.w800,
+                                height: 1.2,
+                              ),
+                        ),
+                        const SizedBox(height: 5),
+                        const Text(
+                          'Samar State University',
+                          style: TextStyle(
+                            color: AppTheme.deepBlue,
+                            fontSize: AppTheme.fontSmall,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
   );
 }
 
@@ -359,13 +506,13 @@ class WorkspaceTabs extends StatelessWidget {
             button: true,
             child: InkWell(
               onTap: () => onSelected(index),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 48),
+              child: Ink(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
-                  vertical: 12,
+                  vertical: 15,
                 ),
                 decoration: BoxDecoration(
+                  color: active ? AppTheme.surfaceBlue : null,
                   border: Border(
                     bottom: BorderSide(
                       color: active ? AppTheme.blue : Colors.transparent,

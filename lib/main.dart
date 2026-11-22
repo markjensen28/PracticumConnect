@@ -61,11 +61,6 @@ class PracticumConnectApp extends StatelessWidget {
           : AnimatedBuilder(
               animation: controller,
               builder: (context, _) {
-                if (controller.busy && controller.user == null) {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
                 return controller.user == null
                     ? LoginScreen(controller: controller)
                     : DashboardScreen(controller: controller);
