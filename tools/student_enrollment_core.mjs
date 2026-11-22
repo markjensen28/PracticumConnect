@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
-import { sendStudentEmail, singleMailbox } from './school_email.mjs';
+import { sendStudentInvitation, singleMailbox } from './school_email.mjs';
 
 const digest = (text) => createHash('sha256').update(text).digest('hex');
 const numberKey = (number) =>
@@ -89,7 +89,9 @@ export async function planRoster(db, auth, rows) {
   return plan;
 }
 
-export async function provisionStudent(db, auth, row, { resend = false, deliver = sendStudentEmail } = {}) {
+export async function provisionStudent(
+  db, auth, row, { resend = false, deliver = sendStudentInvitation, requesterIp } = {},
+) {
   const { uid, email, studentNumber, displayName, rosterRef } = row;
   const userRef = db.collection('users').doc(uid);
   const emailRef = db.collection('roster_emails').doc(digest(email));
@@ -150,12 +152,7 @@ export async function provisionStudent(db, auth, row, { resend = false, deliver 
         tx.update(userRef, { enrollmentStatus: 'pending' });
       });
     }
-    const link = await auth.generatePasswordResetLink(email);
-    await deliver({
-      to: email,
-      subject: 'Activate your Practicum Connect student account',
-      text: `Hello ${displayName},\n\nYour school has enrolled you in Practicum Connect. Set your password using the private Firebase link below, then sign in with this address at ${process.env.APP_ORIGIN}. If prompted, verify your email before signing in again.\n\n${link}`,
-    });
+    await deliver({ to: email, displayName, auth, requesterIp });
     await rosterRef.update({ invitedAt: FieldValue.serverTimestamp() });
     return 'sent';
   } finally {
@@ -166,7 +163,7 @@ export async function provisionStudent(db, auth, row, { resend = false, deliver 
   }
 }
 
-export async function managePendingStudent(db, auth, studentNumber, action) {
+export async function managePendingStudent(db, auth, studentNumber, action, { requesterIp } = {}) {
   const normalizedNumber = numberKey(studentNumber);
   if (!normalizedNumber) throw new Error('Student number is required.');
   if (!['resend', 'remove'].includes(action)) throw new Error('Unsupported pending student action.');
@@ -204,7 +201,7 @@ export async function managePendingStudent(db, auth, studentNumber, action) {
         },
         rosterRef,
       },
-      { resend: true },
+      { resend: true, requesterIp },
     );
     return { resent: true };
   }

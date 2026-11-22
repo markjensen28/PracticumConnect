@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 
 export function singleMailbox(value) {
@@ -25,12 +26,26 @@ function studentEmailProvider() {
 
 export function studentEmailConfigured() {
   const provider = studentEmailProvider();
+  if (provider === 'firebase') return true;
   if (provider === 'gmail') return Object.values(gmailCredentials()).every(Boolean);
   if (provider === 'gmail_smtp') {
     const { user, pass } = gmailSmtpCredentials();
     return singleMailbox(user) && /^[a-z0-9]{16}$/i.test(pass ?? '');
   }
   return provider === 'resend' && Boolean(process.env.RESEND_API_KEY && process.env.SCHOOL_EMAIL_FROM);
+}
+
+export async function sendStudentInvitation({ to, displayName, auth, requesterIp }) {
+  if (studentEmailProvider() === 'firebase') {
+    return sendStudentEmail({ to, auth, requesterIp });
+  }
+
+  const link = await auth.generatePasswordResetLink(to);
+  return sendStudentEmail({
+    to,
+    subject: 'Activate your Practicum Connect student account',
+    text: `Hello ${displayName},\n\nYour school has enrolled you in Practicum Connect. Set your password using the private Firebase link below, then sign in with this address at ${process.env.APP_ORIGIN}. If prompted, verify your email before signing in again.\n\n${link}`,
+  });
 }
 
 export async function sendStudentEmail(message) {
@@ -40,6 +55,7 @@ export async function sendStudentEmail(message) {
 
   const { to, subject, text } = message;
   if (!singleMailbox(to)) throw new Error('A single valid recipient address is required.');
+  if (provider === 'firebase') return sendFirebasePasswordResetEmail(message);
   if (!/^[\x20-\x7e]{1,200}$/.test(subject)) throw new Error('Invalid invitation subject.');
   if (provider === 'gmail_smtp') {
     const auth = gmailSmtpCredentials();
@@ -100,6 +116,46 @@ export async function sendStudentEmail(message) {
   if (!response.ok) {
     throw new Error(`Gmail rejected the invitation (HTTP ${response.status}). Check that the Gmail API is enabled and the mailbox granted permission to send.`);
   }
+}
+
+async function sendFirebasePasswordResetEmail({ to, auth, requesterIp }) {
+  const options = auth?.app?.options;
+  const projectId = options?.projectId ?? process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GCLOUD_PROJECT;
+  if (!projectId || !options?.credential) {
+    throw new Error('Set FIREBASE_PROJECT_ID for the Firebase Admin connection used to send invitations.');
+  }
+
+  const token = await options.credential.getAccessToken().catch(() => null);
+  if (!token?.access_token) throw new Error('Firebase Admin could not authorize the invitation request.');
+
+  const userIp = typeof requesterIp === 'string' ? requesterIp.trim() : '';
+  const endpoint = `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:sendOobCode`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requestType: 'PASSWORD_RESET',
+      email: to,
+      continueUrl: process.env.APP_ORIGIN?.trim(),
+      returnOobLink: false,
+      ...(isIP(userIp) ? { userIp } : {}),
+    }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (response.ok) return;
+
+  const { error } = (await response.json().catch(() => null)) ?? {};
+  const code = error?.message?.split(':')[0];
+  if (code === 'UNAUTHORIZED_DOMAIN' || code === 'INVALID_CONTINUE_URI') {
+    throw new Error('Add the APP_ORIGIN hostname to Firebase Authentication’s Authorized domains.');
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('The Firebase Admin connection could not send email. Check its firebaseauth.users.sendEmail permission.');
+  }
+  if (response.status === 429 || code === 'TOO_MANY_ATTEMPTS_TRY_LATER' || code === 'QUOTA_EXCEEDED') {
+    throw new Error('Firebase is limiting password setup emails. Retry from the pending student record later.');
+  }
+  throw new Error(`Firebase could not send the password setup email (HTTP ${response.status}). Retry from the pending student record.`);
 }
 
 export async function sendSchoolEmail({ to, subject, text }) {

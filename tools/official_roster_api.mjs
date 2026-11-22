@@ -17,7 +17,7 @@ export function validRosterOrigin(value, localServer = false) {
   }
 }
 
-export async function importOfficialRoster({ authorization, body }, localServer = false) {
+export async function importOfficialRoster({ authorization, body, requesterIp }, localServer = false) {
   ensureAdminApp();
   const auth = getAuth(),
     db = getFirestore();
@@ -55,7 +55,7 @@ export async function importOfficialRoster({ authorization, body }, localServer 
             payload: { error: 'Configure the public school app URL and server email delivery before resending.' },
           };
       }
-      const result = await managePendingStudent(db, auth, body.studentNumber, action);
+      const result = await managePendingStudent(db, auth, body.studentNumber, action, { requesterIp });
       return { status: 200, payload: { ok: true, ...result } };
     }
     const plan = await planRoster(db, auth, body.rows);
@@ -75,7 +75,7 @@ export async function importOfficialRoster({ authorization, body }, localServer 
         payload: { error: 'Configure the public school app URL and server email delivery before importing.' },
       };
     }
-    const invitation = await provisionStudent(db, auth, plan[0]);
+    const invitation = await provisionStudent(db, auth, plan[0], { requesterIp });
     return { status: 200, payload: { ok: true, invitation } };
   } catch (error) {
     return { status: 400, payload: { error: error.message || 'Roster import failed.' } };

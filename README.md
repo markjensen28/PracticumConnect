@@ -7,6 +7,16 @@ to enter a full name, student number, and email address and send one invitation.
 Use **Import official roster** for a batch of JSON entries. A pending invitation
 can be resent from the student's row.
 
+## Firebase for student invitations
+
+Set `STUDENT_EMAIL_PROVIDER=firebase` in the Vercel environment used by the app
+and redeploy. This uses the existing Firebase Admin connection to send the
+Firebase Authentication password reset template as the student's password setup
+email. Set `APP_ORIGIN` to the public HTTPS app URL and add its hostname in
+Firebase Authentication **Settings → Authorized domains** so the student can
+return to the app after setting their password. The Firebase Admin credential
+uses the `firebaseauth.users.sendEmail` permission.
+
 ## Gmail app password for student invitations
 
 To send invitations from Gmail without a custom domain, turn on 2-Step
