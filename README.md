@@ -71,5 +71,19 @@ days for Gmail scopes. Reauthorize and update the token when it expires, or
 follow [Google's OAuth publishing guidance](https://developers.google.com/identity/protocols/oauth2/production-readiness/policy-compliance)
 for ongoing use.
 
-With `STUDENT_EMAIL_PROVIDER` unset, the student flow uses Resend. Evaluation
-emails continue to use their existing Resend settings.
+With `STUDENT_EMAIL_PROVIDER` unset, the student flow uses Resend.
+
+### Supervisor evaluation email
+
+Creating a supervisor evaluation saves the link and then emails the supervisor.
+Staff can use **Email link** on the saved evaluation if delivery fails. The
+same sender delivers the supervisor's verification code.
+
+Set the server-side `EVALUATION_EMAIL_PROVIDER` to `gmail`, `gmail_smtp`, or
+`resend` to choose a sender. Gmail uses the same credentials listed above. The
+evaluation flow inherits the student sender if it supports custom emails. With
+Firebase student invitations, it uses the first configured sender in this order:
+Resend, Gmail OAuth, then Gmail SMTP. Firebase password setup emails use
+Firebase's account templates, so a configured custom sender is required for
+evaluation links and verification codes. Keep `APP_ORIGIN` set to the public
+HTTPS app URL used in the supervisor link.

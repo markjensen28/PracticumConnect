@@ -3,7 +3,7 @@ import { checkPdf, documentBucket, evaluationBucket, invalid, readStoredFile, si
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { sendSchoolEmail, singleMailbox } from './school_email.mjs';
+import { evaluationEmailConfigured, sendEvaluationEmail, singleMailbox } from './school_email.mjs';
 import { programAppliesTo } from './cas_programs.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -414,7 +414,7 @@ function unavailable(data) {
   }
 }
 
-export async function sendEvaluationMail({ body, authorization }, deliver = sendSchoolEmail) {
+export async function sendEvaluationMail({ body, authorization }, deliver = sendEvaluationEmail) {
   ensureAdminApp();
   const parsed = parseBody(body);
   const token = normalizeToken(parsed.token);
@@ -422,6 +422,21 @@ export async function sendEvaluationMail({ body, authorization }, deliver = send
   const invitation = parsed.action === 'invite';
   const staff = invitation ? await authorizeStaff(authorization) : null;
   if (staff?.status) return staff;
+  if (deliver === sendEvaluationEmail && !evaluationEmailConfigured()) {
+    return { status: 503, payload: { error: invitation
+      ? 'Supervisor email delivery is not configured. Set EVALUATION_EMAIL_PROVIDER to a configured Gmail or Resend sender.'
+      : 'Supervisor email delivery is unavailable. Contact your internship coordinator.' } };
+  }
+  let invitationUrl;
+  if (invitation) {
+    try {
+      invitationUrl = new URL('/', process.env.APP_ORIGIN?.trim());
+      if (invitationUrl.protocol !== 'https:') throw new Error();
+      invitationUrl.searchParams.set('evaluation', token);
+    } catch {
+      return { status: 503, payload: { error: 'Configure the public HTTPS app origin before sending invitations.' } };
+    }
+  }
   const db = getFirestore();
   const code = randomBytes(6).toString('hex').toUpperCase();
   const state = mailboxRef(db, token);
@@ -455,11 +470,7 @@ export async function sendEvaluationMail({ body, authorization }, deliver = send
   if (result.status) return result;
   let text;
   if (invitation) {
-    const origin = process.env.APP_ORIGIN;
-    if (!origin || !origin.startsWith('https://')) return { status: 503, payload: { error: 'Configure the public HTTPS app origin before sending invitations.' } };
-    const url = new URL('/', origin);
-    url.searchParams.set('evaluation', token);
-    text = `Please complete the supervisor evaluation for ${result.studentName} in Practicum Connect. Open ${url} and request a verification code at this email address.`;
+    text = `Please complete the supervisor evaluation for ${result.studentName} in Practicum Connect. Open ${invitationUrl} and request a verification code at this email address.`;
   } else {
     text = `Your Practicum Connect supervisor verification code is ${code}. It expires in 10 minutes. Enter it only in your evaluation form.`;
   }

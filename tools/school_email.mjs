@@ -24,8 +24,7 @@ function studentEmailProvider() {
   return process.env.STUDENT_EMAIL_PROVIDER?.trim() || 'resend';
 }
 
-export function studentEmailConfigured() {
-  const provider = studentEmailProvider();
+function emailProviderConfigured(provider) {
   if (provider === 'firebase') return true;
   if (provider === 'gmail') return Object.values(gmailCredentials()).every(Boolean);
   if (provider === 'gmail_smtp') {
@@ -33,6 +32,28 @@ export function studentEmailConfigured() {
     return singleMailbox(user) && /^[a-z0-9]{16}$/i.test(pass ?? '');
   }
   return provider === 'resend' && Boolean(process.env.RESEND_API_KEY && process.env.SCHOOL_EMAIL_FROM);
+}
+
+export function studentEmailConfigured() {
+  return emailProviderConfigured(studentEmailProvider());
+}
+
+function evaluationEmailProvider() {
+  const configured = process.env.EVALUATION_EMAIL_PROVIDER?.trim();
+  if (configured) return configured;
+  const studentProvider = studentEmailProvider();
+  if (studentProvider !== 'firebase') return studentProvider;
+  return ['resend', 'gmail', 'gmail_smtp'].find(emailProviderConfigured) || 'resend';
+}
+
+export function evaluationEmailConfigured() {
+  const provider = evaluationEmailProvider();
+  return provider !== 'firebase' && emailProviderConfigured(provider);
+}
+
+export async function sendEvaluationEmail(message) {
+  if (!evaluationEmailConfigured()) throw new Error('Supervisor email delivery is not configured.');
+  return sendMessageWithProvider(evaluationEmailProvider(), message);
 }
 
 export async function sendStudentInvitation({ to, displayName, auth, requesterIp }) {
@@ -51,11 +72,18 @@ export async function sendStudentInvitation({ to, displayName, auth, requesterIp
 export async function sendStudentEmail(message) {
   if (!studentEmailConfigured()) throw new Error('Student email delivery is not configured.');
   const provider = studentEmailProvider();
+  if (provider === 'firebase') {
+    if (!singleMailbox(message.to)) throw new Error('A single valid recipient address is required.');
+    return sendFirebasePasswordResetEmail(message);
+  }
+  return sendMessageWithProvider(provider, message);
+}
+
+async function sendMessageWithProvider(provider, message) {
   if (provider === 'resend') return sendSchoolEmail(message);
 
   const { to, subject, text } = message;
   if (!singleMailbox(to)) throw new Error('A single valid recipient address is required.');
-  if (provider === 'firebase') return sendFirebasePasswordResetEmail(message);
   if (!/^[\x20-\x7e]{1,200}$/.test(subject)) throw new Error('Invalid invitation subject.');
   if (provider === 'gmail_smtp') {
     const auth = gmailSmtpCredentials();
@@ -80,7 +108,7 @@ export async function sendStudentEmail(message) {
       if (error.code === 'EAUTH') {
         throw new Error('Gmail refused the sign-in. Check the sender address and Gmail app password.');
       }
-      throw new Error('Gmail could not send the invitation. Try again from the pending student record.');
+      throw new Error('Gmail could not send the email. Try again.');
     }
     return;
   }

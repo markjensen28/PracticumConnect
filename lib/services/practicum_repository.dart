@@ -893,8 +893,8 @@ class PracticumRepository {
     final isSharedTemplate =
         normalizedPath.split('/').length == 3 &&
         normalizedPath.split('/')[1] == 'form_templates';
-    if (ownerId != firebaseUser.uid && !isSharedTemplate) {
-      final token = await firebaseUser.getIdToken();
+    if (ownerId != firebaseUser.uid) {
+      final token = await firebaseUser.getIdToken(isSharedTemplate);
       final response = await http.post(
         Uri.parse(AppConfig.documentDownloadApiUrl),
         headers: {

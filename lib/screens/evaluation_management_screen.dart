@@ -175,12 +175,13 @@ class _EvaluationManagementScreenState
     final validDays = TextEditingController(text: '14');
     final mailbox = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     PlatformFile? officialFile;
-    String? link;
+    String? evaluationToken;
+    final repository = widget.repository;
 
     final saved = await showWorkspaceEditorDialog(
       context,
       title: 'Create supervisor evaluation link',
-      saveLabel: 'Create link',
+      saveLabel: 'Create and email link',
       width: 600,
       fields: (dialogContext, update) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -305,12 +306,12 @@ class _EvaluationManagementScreenState
         if (PdfTemplateEngine.available) {
           await PdfTemplateEngine.inspect(await officialFile!.readAsBytes());
         }
-        final template = await widget.repository.savePdfFormTemplate(
+        final template = await repository.savePdfFormTemplate(
           actor: widget.user,
           officialFile: officialFile,
           fields: const [],
         );
-        final token = await widget.repository.createSupervisorEvaluation(
+        evaluationToken = await repository.createSupervisorEvaluation(
           templatePath: template.officialPath,
           actor: widget.user,
           student: selected,
@@ -319,36 +320,53 @@ class _EvaluationManagementScreenState
           supervisorEmail: email.text,
           validDays: int.parse(validDays.text),
         );
-        link = _evaluationLink(token);
       },
     );
 
     for (final controller in [company, supervisor, email, validDays]) {
       controller.dispose();
     }
-    if (!saved || !context.mounted) return;
-    final createdLink = link!;
+    if (!saved) return;
+    final token = evaluationToken!;
     var copied = false;
-    try {
-      await Clipboard.setData(ClipboardData(text: createdLink));
-      copied = true;
-    } catch (_) {
-      // The evaluation is already saved. Offer a separate copy action.
+    if (context.mounted) {
+      try {
+        await Clipboard.setData(ClipboardData(text: _evaluationLink(token)));
+        copied = true;
+      } catch (_) {
+        // The link is saved and can still be copied manually.
+      }
     }
+    final messenger = context.mounted ? ScaffoldMessenger.of(context) : null;
+    final pending = messenger?.showSnackBar(
+      const SnackBar(
+        content: Text('Evaluation link created. Sending invitation…'),
+      ),
+    );
+    String? deliveryError;
+    try {
+      await repository.sendEvaluationInvitation(token);
+    } catch (error) {
+      deliveryError = error is StateError
+          ? error.message
+          : 'The invitation could not be sent. Use Email link to retry.';
+    }
+    pending?.close();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            copied
-                ? 'Secure evaluation link created and copied.'
-                : 'Secure evaluation link created.',
+            deliveryError == null
+                ? 'Evaluation link created and emailed.'
+                : 'Evaluation link created. $deliveryError',
           ),
           action: copied
               ? null
               : SnackBarAction(
                   label: 'Copy link',
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: createdLink)),
+                  onPressed: () => Clipboard.setData(
+                    ClipboardData(text: _evaluationLink(token)),
+                  ),
                 ),
         ),
       );

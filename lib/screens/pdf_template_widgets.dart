@@ -327,7 +327,11 @@ class _PdfTemplateActionsState extends State<PdfTemplateActions> {
         );
       }
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(
+          () => _error = error is StateError ? error.message : error.toString(),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
