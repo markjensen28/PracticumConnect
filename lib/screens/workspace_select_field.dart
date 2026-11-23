@@ -2,14 +2,46 @@ import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
 
-class WorkspaceSelectField extends FormField<String> {
+MenuStyle workspaceMenuStyle({
+  required double width,
+  AlignmentGeometry? alignment,
+}) => MenuStyle(
+  alignment: alignment,
+  backgroundColor: const WidgetStatePropertyAll(AppTheme.surface),
+  surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+  elevation: const WidgetStatePropertyAll(5),
+  padding: const WidgetStatePropertyAll(EdgeInsets.all(5)),
+  minimumSize: WidgetStatePropertyAll(Size(width, 0)),
+  maximumSize: WidgetStatePropertyAll(Size(width, 320)),
+  shape: WidgetStatePropertyAll(
+    RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+      side: const BorderSide(color: AppTheme.border),
+    ),
+  ),
+);
+
+ButtonStyle workspaceMenuItemStyle({bool selected = false}) =>
+    MenuItemButton.styleFrom(
+      alignment: AlignmentDirectional.centerStart,
+      minimumSize: const Size(0, 46),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      backgroundColor: selected ? AppTheme.surfaceBlue : null,
+      foregroundColor: selected ? AppTheme.deepBlue : AppTheme.text,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+      ),
+    );
+
+class WorkspaceSelectField<T extends Object> extends FormField<T> {
   WorkspaceSelectField({
     super.key,
     required String label,
-    required List<String> options,
-    String? initialValue,
+    required List<T> options,
+    T? initialValue,
+    String Function(T)? optionLabel,
     String hint = 'Select an option',
-    ValueChanged<String>? onChanged,
+    ValueChanged<T>? onChanged,
     super.onSaved,
     super.validator,
     super.enabled = true,
@@ -20,47 +52,12 @@ class WorkspaceSelectField extends FormField<String> {
            builder: (context, constraints) => MenuAnchor(
              crossAxisUnconstrained: false,
              alignmentOffset: const Offset(0, 6),
-             style: MenuStyle(
-               backgroundColor: const WidgetStatePropertyAll(AppTheme.surface),
-               surfaceTintColor: const WidgetStatePropertyAll(
-                 Colors.transparent,
-               ),
-               elevation: const WidgetStatePropertyAll(5),
-               padding: const WidgetStatePropertyAll(EdgeInsets.all(5)),
-               minimumSize: WidgetStatePropertyAll(
-                 Size(constraints.maxWidth, 0),
-               ),
-               maximumSize: WidgetStatePropertyAll(
-                 Size(constraints.maxWidth, 320),
-               ),
-               shape: WidgetStatePropertyAll(
-                 RoundedRectangleBorder(
-                   borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-                   side: const BorderSide(color: AppTheme.border),
-                 ),
-               ),
-             ),
+             style: workspaceMenuStyle(width: constraints.maxWidth),
              menuChildren: [
                for (final option in options)
                  MenuItemButton(
-                   style: MenuItemButton.styleFrom(
-                     alignment: AlignmentDirectional.centerStart,
-                     minimumSize: const Size(0, 46),
-                     padding: const EdgeInsets.symmetric(
-                       horizontal: 12,
-                       vertical: 8,
-                     ),
-                     backgroundColor: field.value == option
-                         ? AppTheme.surfaceBlue
-                         : null,
-                     foregroundColor: field.value == option
-                         ? AppTheme.deepBlue
-                         : AppTheme.text,
-                     shape: RoundedRectangleBorder(
-                       borderRadius: BorderRadius.circular(
-                         AppTheme.controlRadius,
-                       ),
-                     ),
+                   style: workspaceMenuItemStyle(
+                     selected: field.value == option,
                    ),
                    onPressed: enabled
                        ? () {
@@ -73,7 +70,11 @@ class WorkspaceSelectField extends FormField<String> {
                      child: Row(
                        spacing: 12,
                        children: [
-                         Expanded(child: Text(option)),
+                         Expanded(
+                           child: Text(
+                             optionLabel?.call(option) ?? option.toString(),
+                           ),
+                         ),
                          Icon(
                            field.value == option
                                ? Icons.radio_button_checked_rounded
@@ -139,7 +140,12 @@ class WorkspaceSelectField extends FormField<String> {
                                ),
                                const SizedBox(height: 2),
                                Text(
-                                 field.value ?? hint,
+                                 switch (field.value) {
+                                   final value? =>
+                                     optionLabel?.call(value) ??
+                                         value.toString(),
+                                   _ => hint,
+                                 },
                                  style: TextStyle(
                                    color: !enabled || field.value == null
                                        ? AppTheme.muted

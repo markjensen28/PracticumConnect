@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 import '../models/records.dart';
 import '../models/requirement_compliance.dart';
 import '../models/workflow_models.dart';
@@ -13,6 +14,7 @@ import 'document_workflow_screens.dart';
 import 'moa_management_screen.dart';
 import 'student_profile_screen.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class CoordinatorDashboardScreen extends StatefulWidget {
   const CoordinatorDashboardScreen({
@@ -126,10 +128,7 @@ class _CoordinatorDashboardScreenState
     stream: widget.repository.watchStudentsFor(widget.user),
     builder: (context, userSnapshot) {
       final allStudents = userSnapshot.data ?? const <AppUser>[];
-      final programs = {
-        'All Programs',
-        ...allStudents.map((student) => student.program).whereType<String>(),
-      }.toList();
+      const programs = ['All Programs', ...casPrograms];
       final academicYears = {
         'All Academic Years',
         ...allStudents
@@ -144,9 +143,10 @@ class _CoordinatorDashboardScreenState
           ? _academicYear
           : 'All Academic Years';
       final students = allStudents.where((student) {
-        final programMatches =
-            effectiveProgram == 'All Programs' ||
-            student.program == effectiveProgram;
+        final programMatches = programAppliesTo(
+          effectiveProgram,
+          student.program,
+        );
         final yearMatches =
             effectiveAcademicYear == 'All Academic Years' ||
             student.academicYear == effectiveAcademicYear;
@@ -219,59 +219,37 @@ class _CoordinatorDashboardScreenState
                         eyebrow: 'Home  ›  Dashboard',
                         actions: [
                           SizedBox(
-                            width: 168,
-                            child: DropdownButtonFormField<String>(
-                              isExpanded: true,
+                            width: 146,
+                            child: WorkspaceSelectField(
+                              key: ValueKey(
+                                'dashboard-year-$effectiveAcademicYear',
+                              ),
+                              label: 'Academic year',
                               initialValue: effectiveAcademicYear,
-                              decoration: const InputDecoration(
-                                labelText: 'Academic Year',
-                              ),
-                              items: academicYears
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(
-                                        value == 'All Academic Years'
-                                            ? 'All years'
-                                            : value,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) => setState(
-                                () => _academicYear =
-                                    value ?? 'All Academic Years',
-                              ),
+                              options: academicYears,
+                              optionLabel: (value) =>
+                                  value == 'All Academic Years'
+                                  ? 'All years'
+                                  : value,
+                              onChanged: (value) =>
+                                  setState(() => _academicYear = value),
                             ),
                           ),
                           SizedBox(
-                            width: 178,
-                            child: DropdownButtonFormField<String>(
-                              isExpanded: true,
+                            width: 194,
+                            child: WorkspaceSelectField(
+                              key: ValueKey(
+                                'dashboard-program-$effectiveProgram',
+                              ),
+                              label: 'CAS program',
                               initialValue: effectiveProgram,
-                              decoration: const InputDecoration(
-                                labelText: 'CAS Program',
-                              ),
-                              items: programs
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(
-                                        value,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) => setState(
-                                () => _program = value ?? 'All Programs',
-                              ),
+                              options: programs,
+                              onChanged: (value) =>
+                                  setState(() => _program = value),
                             ),
                           ),
                         ],
+
                         child: ListView(
                           children: [
                             _DashboardStats(

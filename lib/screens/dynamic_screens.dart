@@ -8,6 +8,7 @@ import '../core/app_theme.dart';
 import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
+import 'workspace_select_field.dart';
 
 class TorScreen extends StatelessWidget {
   const TorScreen({super.key, required this.user, required this.repository});
@@ -415,7 +416,8 @@ class PeopleScreen extends StatefulWidget {
 }
 
 class _PeopleScreenState extends State<PeopleScreen> {
-  String _query = '';
+  final _search = TextEditingController();
+  String _role = 'all';
   late Stream<List<AppUser>> _users;
 
   AppUser get user => widget.user;
@@ -439,9 +441,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.repository != repository ||
         oldWidget.studentsOnly != studentsOnly) {
-      _query = '';
+      _search.clear();
+      _role = 'all';
       _subscribe();
     }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   @override
@@ -471,11 +480,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
         final accounts = studentsOnly
             ? users
             : users.where((item) => !item.isPendingCoordinator).toList();
+        final query = _search.text.trim().toLowerCase();
         final visibleUsers = accounts.where((item) {
+          if (_role != 'all' && item.role.value != _role) return false;
+          if (query.isEmpty) return true;
           final searchable =
               '${item.displayName} ${item.email} '
               '${item.studentNumber ?? ''} ${item.staffId ?? ''} ${item.role.label}';
-          return searchable.toLowerCase().contains(_query);
+          return searchable.toLowerCase().contains(query);
         }).toList();
 
         return Column(
@@ -495,14 +507,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   final rows = visibleUsers.isEmpty
                       ? _Empty(
                           icon: Icons.manage_accounts_outlined,
-                          title: _query.isEmpty
+                          title: accounts.isEmpty
                               ? 'No approved accounts yet'
                               : 'No matching accounts',
-                          message: _query.isEmpty
+                          message: accounts.isEmpty
                               ? 'Review pending coordinator requests above.'
-                              : 'Search by name, email, role, or ID.',
+                              : 'Try a different role or search term.',
                         )
                       : ListView.separated(
+                          key: ValueKey(_role),
                           itemCount: visibleUsers.length,
                           separatorBuilder: (_, _) => studentsOnly
                               ? const SizedBox(height: 10)
@@ -510,6 +523,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                           itemBuilder: (context, index) {
                             final item = visibleUsers[index];
                             return _AccountCard(
+                              key: ValueKey(item.uid),
                               item: item,
                               studentsOnly: studentsOnly,
                               currentUser: user,
@@ -552,8 +566,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   if (studentsOnly) return rows;
                   return _AccountsPanel(
                     count: visibleUsers.length,
-                    onQuery: (value) =>
-                        setState(() => _query = value.trim().toLowerCase()),
+                    role: _role,
+                    searchController: _search,
+                    onRoleChanged: (role) => setState(() => _role = role),
+                    onQuery: (_) => setState(() {}),
                     child: rows,
                   );
                 },
@@ -656,21 +672,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text('Assign ${student.displayName}'),
-          content: DropdownButtonFormField<AppUser>(
-            isExpanded: true,
-            initialValue: selected,
-            decoration: const InputDecoration(labelText: 'Program Coordinator'),
-            items: coordinators
-                .map(
-                  (coordinator) => DropdownMenuItem(
-                    value: coordinator,
-                    child: Text(coordinator.displayName),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) setDialogState(() => selected = value);
-            },
+          content: SizedBox(
+            width: 420,
+            child: WorkspaceSelectField(
+              label: 'Program Coordinator',
+              initialValue: selected,
+              options: coordinators,
+              optionLabel: (coordinator) => coordinator.displayName,
+              onChanged: (value) => selected = value,
+            ),
           ),
           actions: [
             TextButton(
@@ -848,6 +858,9 @@ class _CoordinatorRequestPanel extends StatelessWidget {
 class _AccountsPanel extends StatelessWidget {
   const _AccountsPanel({
     required this.count,
+    required this.role,
+    required this.searchController,
+    required this.onRoleChanged,
     required this.onQuery,
     required this.child,
   });
@@ -855,8 +868,17 @@ class _AccountsPanel extends StatelessWidget {
   static const _desktopWidth = 650.0;
   static const _roleWidth = 250.0;
   static const _accessWidth = 142.0;
+  static const _roles = {
+    'all': 'All roles',
+    'admin': 'College coordinators',
+    'coordinator': 'Program coordinators',
+    'student': 'Students',
+  };
 
   final int count;
+  final String role;
+  final TextEditingController searchController;
+  final ValueChanged<String> onRoleChanged;
   final ValueChanged<String> onQuery;
   final Widget child;
 
@@ -865,16 +887,42 @@ class _AccountsPanel extends StatelessWidget {
     child: LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= _desktopWidth;
-        final countLabel = Text(
-          '$count ${count == 1 ? 'account' : 'accounts'}',
-          style: Theme.of(context).textTheme.titleMedium,
+        final countLabel = Semantics(
+          container: true,
+          liveRegion: true,
+          child: Text(
+            '$count ${count == 1 ? 'account' : 'accounts'}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         );
         final search = TextField(
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search_rounded, size: 19),
-            hintText: 'Search accounts',
+          controller: searchController,
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search_rounded, size: 19),
+            labelText: 'Search accounts',
+            suffixIcon: searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      searchController.clear();
+                      onQuery('');
+                    },
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                  ),
           ),
           onChanged: onQuery,
+        );
+        final roleFilter = SizedBox(
+          width: wide ? 210 : (constraints.maxWidth - 24) * .62,
+          child: WorkspaceSelectField(
+            key: ValueKey(role),
+            label: 'Role',
+            initialValue: role,
+            options: _roles.keys.toList(),
+            optionLabel: (value) => _roles[value]!,
+            onChanged: onRoleChanged,
+          ),
         );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -886,13 +934,26 @@ class _AccountsPanel extends StatelessWidget {
                       spacing: 12,
                       children: [
                         Expanded(child: countLabel),
-                        SizedBox(width: 340, child: search),
+                        roleFilter,
+                        SizedBox(
+                          width: constraints.maxWidth >= 760 ? 340 : 250,
+                          child: search,
+                        ),
                       ],
                     )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       spacing: 8,
-                      children: [countLabel, search],
+                      children: [
+                        Row(
+                          spacing: 8,
+                          children: [
+                            Expanded(child: countLabel),
+                            roleFilter,
+                          ],
+                        ),
+                        search,
+                      ],
                     ),
             ),
             const Divider(height: 1),
@@ -927,6 +988,7 @@ class _AccountsPanel extends StatelessWidget {
 
 class _AccountCard extends StatelessWidget {
   const _AccountCard({
+    super.key,
     required this.item,
     required this.studentsOnly,
     required this.currentUser,

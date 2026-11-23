@@ -474,6 +474,191 @@ class DashboardWelcome extends StatelessWidget {
   );
 }
 
+Future<bool> showWorkspaceEditorDialog(
+  BuildContext context, {
+  required String title,
+  required String saveLabel,
+  double width = 640,
+  required Widget Function(BuildContext context, StateSetter update) fields,
+  required Future<void> Function() onSave,
+}) async {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final route = DialogRoute<bool>(
+    context: context,
+    barrierDismissible: false,
+    themes: InheritedTheme.capture(from: context, to: navigator.context),
+    builder: (_) => _WorkspaceEditorDialog(
+      title: title,
+      saveLabel: saveLabel,
+      width: width,
+      fields: fields,
+      onSave: onSave,
+    ),
+  );
+  final result = await navigator.push(route);
+  await route.completed;
+  return result == true;
+}
+
+class _WorkspaceEditorDialog extends StatefulWidget {
+  const _WorkspaceEditorDialog({
+    required this.title,
+    required this.saveLabel,
+    required this.width,
+    required this.fields,
+    required this.onSave,
+  });
+
+  final String title;
+  final String saveLabel;
+  final double width;
+  final Widget Function(BuildContext context, StateSetter update) fields;
+  final Future<void> Function() onSave;
+
+  @override
+  State<_WorkspaceEditorDialog> createState() => _WorkspaceEditorDialogState();
+}
+
+class _WorkspaceEditorDialogState extends State<_WorkspaceEditorDialog> {
+  final _form = GlobalKey<FormState>();
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final invalid = _form.currentState!.validateGranularly();
+    if (invalid.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FormFieldState<Object?>? first;
+        var top = double.infinity;
+        for (final field in invalid) {
+          if (!field.mounted) continue;
+          final box = field.context.findRenderObject();
+          if (box is! RenderBox || !box.hasSize) continue;
+          final y = box.localToGlobal(Offset.zero).dy;
+          if (y < top) {
+            first = field;
+            top = y;
+          }
+        }
+        if (first != null) {
+          Scrollable.ensureVisible(first.context, alignment: .15);
+        }
+      });
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSave();
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = switch (error) {
+            ArgumentError(:final message) => '$message',
+            StateError(:final message) => message,
+            _ => error.toString(),
+          };
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_saving,
+    child: AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      title: Text(widget.title),
+      content: SizedBox(
+        width: widget.width,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _form,
+            child: ExcludeFocus(
+              excluding: _saving,
+              child: AbsorbPointer(
+                absorbing: _saving,
+                child: widget.fields(context, setState),
+              ),
+            ),
+          ),
+        ),
+      ),
+      actionsAlignment: MainAxisAlignment.end,
+      actions: [
+        if (_error case final error?)
+          Semantics(
+            liveRegion: true,
+            child: Text(error, style: const TextStyle(color: AppTheme.danger)),
+          ),
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? 'Saving…' : widget.saveLabel),
+        ),
+      ],
+    ),
+  );
+}
+
+class WorkspaceFormSection extends StatelessWidget {
+  const WorkspaceFormSection({
+    super.key,
+    required this.title,
+    required this.children,
+  });
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: 12,
+    children: [
+      Semantics(
+        header: true,
+        child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      ),
+      ...children,
+    ],
+  );
+}
+
+class WorkspaceFormPair extends StatelessWidget {
+  const WorkspaceFormPair(this.first, this.second, {super.key});
+
+  final Widget first;
+  final Widget second;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => constraints.maxWidth >= 460
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 12,
+            children: [
+              Expanded(child: first),
+              Expanded(child: second),
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [first, second],
+          ),
+  );
+}
+
 class WorkspaceMetrics extends StatelessWidget {
   const WorkspaceMetrics({super.key, required this.items});
 

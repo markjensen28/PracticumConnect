@@ -24,6 +24,7 @@ import 'notification_panel_screen.dart';
 import 'student_profile_screen.dart';
 import 'student_dashboard_screen.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class ModuleRouter extends StatelessWidget {
   const ModuleRouter({
@@ -1521,211 +1522,171 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final title = TextEditingController(text: existing?.title);
     final message = TextEditingController(text: existing?.message);
     final link = TextEditingController(text: existing?.linkUrl);
-    var target = existing?.targetRole ?? 'student';
-    if (target.startsWith('user:')) target = 'student';
-    var priority = existing?.priority ?? 'normal';
+    const audiences = {
+      'student': 'Student interns',
+      'coordinator': 'Program coordinators',
+      'all': 'All signed-in users',
+    };
+    const priorities = {'normal': 'Normal', 'high': 'High', 'urgent': 'Urgent'};
+    var target = 'student';
+    var priority = priorities.containsKey(existing?.priority)
+        ? existing!.priority
+        : 'normal';
     DateTime? scheduledFor = existing?.scheduledFor;
-    var saving = false;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(
-            existing == null ? 'Create notification' : 'Edit notification',
+    await showWorkspaceEditorDialog(
+      context,
+      title: existing == null ? 'Create notification' : 'Edit notification',
+      saveLabel: existing == null ? 'Publish' : 'Save changes',
+      width: 600,
+      fields: (dialogContext, update) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 22,
+        children: [
+          WorkspaceFormSection(
+            title: 'Message',
+            children: [
+              TextFormField(
+                controller: title,
+                decoration: const InputDecoration(labelText: 'Title *'),
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                validator: (value) =>
+                    value?.trim().isNotEmpty == true ? null : 'Enter a title.',
+              ),
+              TextFormField(
+                controller: message,
+                minLines: 2,
+                maxLines: 5,
+                decoration: const InputDecoration(labelText: 'Message *'),
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                validator: (value) => value?.trim().isNotEmpty == true
+                    ? null
+                    : 'Enter a message.',
+              ),
+              TextField(
+                controller: link,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Related link (optional)',
+                ),
+              ),
+            ],
           ),
-          content: SizedBox(
-            width: 560,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          WorkspaceFormSection(
+            title: 'Delivery',
+            children: [
+              WorkspaceFormPair(
+                existing == null
+                    ? WorkspaceSelectField(
+                        label: 'Audience',
+                        initialValue: target,
+                        options: audiences.keys.toList(),
+                        optionLabel: (value) => audiences[value]!,
+                        onChanged: (value) => target = value,
+                      )
+                    : InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Audience',
+                          enabled: false,
+                          fillColor: AppTheme.surfaceSoft,
+                        ),
+                        child: Text(
+                          existing.targetUserId != null
+                              ? 'Individual recipient'
+                              : _audienceLabel(existing.targetRole),
+                        ),
+                      ),
+                WorkspaceSelectField(
+                  label: 'Priority',
+                  initialValue: priority,
+                  options: priorities.keys.toList(),
+                  optionLabel: (value) => priorities[value]!,
+                  onChanged: (value) => priority = value,
+                ),
+              ),
+              Row(
+                spacing: 8,
                 children: [
-                  TextField(
-                    controller: title,
-                    decoration: const InputDecoration(labelText: 'Title'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: message,
-                    maxLines: 4,
-                    decoration: const InputDecoration(labelText: 'Message'),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: target,
-                          decoration: const InputDecoration(
-                            labelText: 'Audience',
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'student',
-                              child: Text('Student Interns'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'coordinator',
-                              child: Text('Program Coordinators'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'all',
-                              child: Text('All signed-in users'),
-                            ),
-                          ],
-                          onChanged: existing == null
-                              ? (value) => setDialogState(
-                                  () => target = value ?? 'student',
-                                )
-                              : null,
-                        ),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        alignment: AlignmentDirectional.centerStart,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: priority,
-                          decoration: const InputDecoration(
-                            labelText: 'Priority',
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final initial = scheduledFor ?? now;
+                        final first = DateTime(now.year - 1);
+                        final last = DateTime(now.year + 3);
+                        final date = await showDatePicker(
+                          context: dialogContext,
+                          firstDate: initial.isBefore(first) ? initial : first,
+                          lastDate: initial.isAfter(last) ? initial : last,
+                          initialDate: initial,
+                        );
+                        if (date == null || !dialogContext.mounted) return;
+                        final time = await showTimePicker(
+                          context: dialogContext,
+                          initialTime: TimeOfDay.fromDateTime(initial),
+                        );
+                        if (time == null || !dialogContext.mounted) return;
+                        update(
+                          () => scheduledFor = DateTime(
+                            date.year,
+                            date.month,
+                            date.day,
+                            time.hour,
+                            time.minute,
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'normal',
-                              child: Text('Normal'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'high',
-                              child: Text('High'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'urgent',
-                              child: Text('Urgent'),
-                            ),
-                          ],
-                          onChanged: (value) => setDialogState(
-                            () => priority = value ?? 'normal',
-                          ),
-                        ),
+                        );
+                      },
+                      icon: const Icon(Icons.schedule_outlined, size: 19),
+                      label: Text(
+                        scheduledFor == null
+                            ? 'Schedule delivery'
+                            : DateFormat.yMMMd().add_jm().format(scheduledFor!),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: link,
-                    decoration: const InputDecoration(
-                      labelText: 'Related link (optional)',
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            final now = DateTime.now();
-                            final date = await showDatePicker(
-                              context: context,
-                              firstDate: DateTime(now.year - 1),
-                              lastDate: DateTime(now.year + 3),
-                              initialDate: scheduledFor ?? now,
-                            );
-                            if (date == null || !context.mounted) return;
-                            final time = await showTimePicker(
-                              context: context,
-                              initialTime: scheduledFor == null
-                                  ? TimeOfDay.fromDateTime(now)
-                                  : TimeOfDay.fromDateTime(scheduledFor!),
-                            );
-                            if (time == null) return;
-                            setDialogState(() {
-                              scheduledFor = DateTime(
-                                date.year,
-                                date.month,
-                                date.day,
-                                time.hour,
-                                time.minute,
-                              );
-                            });
-                          },
-                          icon: const Icon(Icons.schedule_outlined),
-                          label: Text(
-                            scheduledFor == null
-                                ? 'Send immediately'
-                                : DateFormat.yMMMd().add_jm().format(
-                                    scheduledFor!,
-                                  ),
-                          ),
-                        ),
-                      ),
-                      if (scheduledFor != null) ...[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Send immediately instead',
-                          onPressed: () =>
-                              setDialogState(() => scheduledFor = null),
-                          icon: const Icon(Icons.clear_rounded),
-                        ),
-                      ],
-                    ],
-                  ),
+                  if (scheduledFor != null)
+                    IconButton(
+                      tooltip: 'Clear scheduled delivery',
+                      onPressed: () => update(() => scheduledFor = null),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
                 ],
               ),
-            ),
+              if (scheduledFor == null)
+                const Text(
+                  'Sends when published.',
+                  style: TextStyle(color: AppTheme.muted),
+                ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: saving
-                  ? null
-                  : () async {
-                      if (title.text.trim().isEmpty ||
-                          message.text.trim().isEmpty) {
-                        return;
-                      }
-                      setDialogState(() => saving = true);
-                      try {
-                        if (existing == null) {
-                          await widget.repository.sendNotification(
-                            actor: widget.user,
-                            title: title.text,
-                            message: message.text,
-                            targetRole: target,
-                            priority: priority,
-                            scheduledFor: scheduledFor,
-                            linkUrl: link.text,
-                          );
-                        } else {
-                          await widget.repository.updateNotification(
-                            actor: widget.user,
-                            notification: existing,
-                            title: title.text,
-                            message: message.text,
-                            priority: priority,
-                            scheduledFor: scheduledFor,
-                            linkUrl: link.text,
-                          );
-                        }
-                        if (dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
-                        }
-                      } catch (error) {
-                        setDialogState(() => saving = false);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(
-                            context,
-                          ).showSnackBar(SnackBar(content: Text('$error')));
-                        }
-                      }
-                    },
-              child: Text(existing == null ? 'Publish' : 'Save changes'),
-            ),
-          ],
-        ),
+        ],
       ),
+      onSave: () async {
+        if (existing == null) {
+          await widget.repository.sendNotification(
+            actor: widget.user,
+            title: title.text,
+            message: message.text,
+            targetRole: target,
+            priority: priority,
+            scheduledFor: scheduledFor,
+            linkUrl: link.text,
+          );
+        } else {
+          await widget.repository.updateNotification(
+            actor: widget.user,
+            notification: existing,
+            title: title.text,
+            message: message.text,
+            priority: priority,
+            scheduledFor: scheduledFor,
+            linkUrl: link.text,
+          );
+        }
+      },
     );
 
     title.dispose();

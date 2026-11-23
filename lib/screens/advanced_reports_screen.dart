@@ -253,79 +253,69 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
                             icon: const Icon(Icons.archive_outlined, size: 17),
                             label: const Text('Archive Academic Year'),
                           ),
-                          PopupMenuButton<String>(
-                            enabled: !_exporting && visibleRows.isNotEmpty,
-                            onSelected: (format) => _export(
-                              context,
-                              format,
-                              data.headers,
-                              visibleRows,
+                          MenuAnchor(
+                            style: workspaceMenuStyle(
+                              width: 182,
+                              alignment: AlignmentDirectional.bottomEnd,
                             ),
-                            itemBuilder: (context) => const [
-                              PopupMenuItem(
-                                value: 'pdf',
-                                child: Text('Export PDF'),
-                              ),
-                              PopupMenuItem(
-                                value: 'excel',
-                                child: Text('Export Excel'),
-                              ),
-                              PopupMenuItem(
-                                value: 'csv',
-                                child: Text('Export CSV'),
-                              ),
-                            ],
-                            child: Container(
-                              height: 40,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                              ),
-                              decoration: BoxDecoration(
-                                color: (!_exporting && visibleRows.isNotEmpty)
-                                    ? AppTheme.blue
-                                    : AppTheme.surfaceSoft,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: (!_exporting && visibleRows.isNotEmpty)
-                                      ? AppTheme.blue
-                                      : AppTheme.border,
+                            alignmentOffset: const Offset(0, 6),
+                            menuChildren: [
+                              for (final (format, label, icon) in const [
+                                (
+                                  'pdf',
+                                  'Export PDF',
+                                  Icons.picture_as_pdf_outlined,
                                 ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_exporting)
-                                    const SizedBox.square(
-                                      dimension: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  else
-                                    Icon(
-                                      Icons.download_outlined,
-                                      size: 17,
-                                      color: visibleRows.isNotEmpty
-                                          ? Colors.white
-                                          : AppTheme.muted,
-                                    ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Export',
-                                    style: TextStyle(
-                                      color:
-                                          (!_exporting &&
-                                              visibleRows.isNotEmpty)
-                                          ? Colors.white
-                                          : AppTheme.muted,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                (
+                                  'excel',
+                                  'Export Excel',
+                                  Icons.table_chart_outlined,
+                                ),
+                                (
+                                  'csv',
+                                  'Export CSV',
+                                  Icons.text_snippet_outlined,
+                                ),
+                              ])
+                                MenuItemButton(
+                                  leadingIcon: Icon(icon, size: 18),
+                                  style: workspaceMenuItemStyle(),
+                                  onPressed: () => _export(
+                                    context,
+                                    format,
+                                    data.headers,
+                                    visibleRows,
                                   ),
-                                ],
+                                  child: Text(label),
+                                ),
+                            ],
+                            builder: (context, menu, _) => Semantics(
+                              expanded: menu.isOpen,
+                              child: FilledButton.icon(
+                                onPressed: _exporting || visibleRows.isEmpty
+                                    ? null
+                                    : () => menu.isOpen
+                                          ? menu.close()
+                                          : menu.open(),
+                                icon: _exporting
+                                    ? const SizedBox.square(
+                                        dimension: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.download_outlined,
+                                        size: 17,
+                                      ),
+                                label: Text(
+                                  _exporting ? 'Exporting…' : 'Export',
+                                ),
                               ),
                             ),
                           ),
                         ],
+
                         child: ListView(
                           children: [
                             _ReportFilters(

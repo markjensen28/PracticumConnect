@@ -1640,6 +1640,7 @@ class PracticumRepository {
     String? contactEmail,
     String? contactPhone,
     String? remarks,
+    String? manualStatus,
   }) async {
     if (actor.role != UserRole.admin) {
       throw StateError(
@@ -1670,7 +1671,7 @@ class PracticumRepository {
       'contactEmail': contactEmail?.trim(),
       'contactPhone': contactPhone?.trim(),
       'remarks': remarks?.trim(),
-      'manualStatus': null,
+      'manualStatus': manualStatus,
       'createdBy': actor.uid,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

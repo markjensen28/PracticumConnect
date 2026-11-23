@@ -10,6 +10,7 @@ import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class EvaluationManagementScreen extends StatefulWidget {
   const EvaluationManagementScreen({
@@ -167,174 +168,191 @@ class _EvaluationManagementScreenState
     BuildContext context,
     List<AppUser> students,
   ) async {
-    AppUser selected = students.first;
+    var selected = students.first;
     final company = TextEditingController();
     final supervisor = TextEditingController();
     final email = TextEditingController();
     final validDays = TextEditingController(text: '14');
+    final mailbox = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     PlatformFile? officialFile;
-    var saving = false;
+    String? link;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Create supervisor evaluation link'),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<AppUser>(
-                    isExpanded: true,
-                    initialValue: selected,
-                    decoration: const InputDecoration(
-                      labelText: 'Student intern',
-                    ),
-                    items: students
-                        .map(
-                          (student) => DropdownMenuItem(
-                            value: student,
-                            child: Text(
-                              '${student.displayName} (${student.studentNumber ?? student.email})',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: saving
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              setDialogState(() => selected = value);
-                            }
-                          },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: company,
-                    decoration: const InputDecoration(
-                      labelText: 'Company / agency',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: supervisor,
-                    decoration: const InputDecoration(
-                      labelText: 'Supervisor name',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Supervisor email',
-                      helperText:
-                          'Verification codes are sent to this mailbox.',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.picture_as_pdf),
-                    label: Text(
-                      officialFile?.name ?? 'Select official editable PDF',
-                    ),
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            final file = await FilePicker.pickFile(
-                              type: FileType.custom,
-                              allowedExtensions: ['pdf'],
-                            );
-                            if (file != null && dialogContext.mounted) {
-                              setDialogState(() => officialFile = file);
-                            }
-                          },
-                  ),
-                  TextField(
-                    controller: validDays,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Link validity (days)',
-                    ),
-                  ),
-                ],
+    final saved = await showWorkspaceEditorDialog(
+      context,
+      title: 'Create supervisor evaluation link',
+      saveLabel: 'Create link',
+      width: 600,
+      fields: (dialogContext, update) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 22,
+        children: [
+          WorkspaceFormSection(
+            title: 'Internship placement',
+            children: [
+              WorkspaceSelectField(
+                label: 'Student intern',
+                initialValue: selected,
+                options: students,
+                optionLabel: (student) =>
+                    '${student.displayName} (${student.studentNumber ?? student.email})',
+                onChanged: (student) => selected = student,
               ),
-            ),
+              TextFormField(
+                controller: company,
+                decoration: const InputDecoration(
+                  labelText: 'Company / agency *',
+                ),
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                validator: (value) => value?.trim().isNotEmpty == true
+                    ? null
+                    : 'Enter the company or agency.',
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: saving
-                  ? null
-                  : () async {
-                      setDialogState(() => saving = true);
-                      try {
-                        if (officialFile == null) {
-                          throw StateError(
-                            'Select the approved editable PDF first.',
-                          );
+          WorkspaceFormSection(
+            title: 'Supervisor',
+            children: [
+              WorkspaceFormPair(
+                TextFormField(
+                  controller: supervisor,
+                  decoration: const InputDecoration(
+                    labelText: 'Supervisor name *',
+                  ),
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (value) => value?.trim().isNotEmpty == true
+                      ? null
+                      : 'Enter the supervisor name.',
+                ),
+                TextFormField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Supervisor email *',
+                    helperText: 'Receives the verification code.',
+                  ),
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (value) => mailbox.hasMatch(value?.trim() ?? '')
+                      ? null
+                      : 'Enter a valid supervisor email.',
+                ),
+              ),
+            ],
+          ),
+          WorkspaceFormSection(
+            title: 'Link settings',
+            children: [
+              TextFormField(
+                controller: validDays,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Link validity (days) *',
+                  helperText: 'Choose between 1 and 60 days.',
+                ),
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                validator: (value) {
+                  final days = int.tryParse(value ?? '');
+                  return days != null && days >= 1 && days <= 60
+                      ? null
+                      : 'Enter a value from 1 to 60.';
+                },
+              ),
+              FormField<PlatformFile>(
+                validator: (value) =>
+                    value == null ? 'Select the approved editable PDF.' : null,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                builder: (field) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 6,
+                  children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        alignment: AlignmentDirectional.centerStart,
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 19),
+                      label: Text(
+                        officialFile?.name ?? 'Select official editable PDF',
+                      ),
+                      onPressed: () async {
+                        final file = await FilePicker.pickFile(
+                          type: FileType.custom,
+                          allowedExtensions: ['pdf'],
+                        );
+                        if (file != null && field.mounted) {
+                          officialFile = file;
+                          field.didChange(file);
                         }
-                        if (PdfTemplateEngine.available) {
-                          await PdfTemplateEngine.inspect(
-                            await officialFile!.readAsBytes(),
-                          );
-                        }
-                        final template = await widget.repository
-                            .savePdfFormTemplate(
-                              actor: widget.user,
-                              officialFile: officialFile,
-                              fields: const [],
-                            );
-                        final token = await widget.repository
-                            .createSupervisorEvaluation(
-                              templatePath: template.officialPath,
-                              actor: widget.user,
-                              student: selected,
-                              companyName: company.text,
-                              supervisorName: supervisor.text,
-                              supervisorEmail: email.text,
-                              validDays: int.tryParse(validDays.text) ?? 14,
-                            );
-                        final link = _evaluationLink(token);
-                        await Clipboard.setData(ClipboardData(text: link));
-                        if (dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
-                        }
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Secure evaluation link created and copied.',
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (error) {
-                        setDialogState(() => saving = false);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(
-                            context,
-                          ).showSnackBar(SnackBar(content: Text('$error')));
-                        }
-                      }
-                    },
-              child: const Text('Create Link'),
-            ),
-          ],
-        ),
+                      },
+                    ),
+                    if (field.errorText case final error?)
+                      Text(
+                        error,
+                        style: const TextStyle(color: AppTheme.danger),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
+      onSave: () async {
+        if (selected.academicYear?.trim().isEmpty ?? true) {
+          throw StateError(
+            'Set the student’s academic year in their internship profile.',
+          );
+        }
+        if (PdfTemplateEngine.available) {
+          await PdfTemplateEngine.inspect(await officialFile!.readAsBytes());
+        }
+        final template = await widget.repository.savePdfFormTemplate(
+          actor: widget.user,
+          officialFile: officialFile,
+          fields: const [],
+        );
+        final token = await widget.repository.createSupervisorEvaluation(
+          templatePath: template.officialPath,
+          actor: widget.user,
+          student: selected,
+          companyName: company.text,
+          supervisorName: supervisor.text,
+          supervisorEmail: email.text,
+          validDays: int.parse(validDays.text),
+        );
+        link = _evaluationLink(token);
+      },
     );
 
-    company.dispose();
-    supervisor.dispose();
-    email.dispose();
-    validDays.dispose();
+    for (final controller in [company, supervisor, email, validDays]) {
+      controller.dispose();
+    }
+    if (!saved || !context.mounted) return;
+    final createdLink = link!;
+    var copied = false;
+    try {
+      await Clipboard.setData(ClipboardData(text: createdLink));
+      copied = true;
+    } catch (_) {
+      // The evaluation is already saved. Offer a separate copy action.
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            copied
+                ? 'Secure evaluation link created and copied.'
+                : 'Secure evaluation link created.',
+          ),
+          action: copied
+              ? null
+              : SnackBarAction(
+                  label: 'Copy link',
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: createdLink)),
+                ),
+        ),
+      );
+    }
   }
 
   String _evaluationLink(String token) {

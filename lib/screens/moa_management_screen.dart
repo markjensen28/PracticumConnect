@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
@@ -73,7 +74,7 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
         };
         final programs = <String>{
           'All Programs',
-          ...all.expand((record) => record.programs),
+          ...all.expand((record) => _programSelection(record.programs)),
         }.where((value) => value.trim().isNotEmpty).toList()..sort();
         final effectiveProgram = programs.contains(_program)
             ? _program
@@ -91,7 +92,7 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
           final matchesProgram =
               effectiveProgram == 'All Programs' ||
               record.programs.isEmpty ||
-              record.programs.contains(effectiveProgram);
+              _programSelection(record.programs).contains(effectiveProgram);
           final matchesExpiry = switch (_expiryFilter) {
             'Expired' => record.isExpired,
             'Within 30 days' =>
@@ -437,113 +438,85 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
     final contactName = TextEditingController(text: existing?.contactName);
     final contactEmail = TextEditingController(text: existing?.contactEmail);
     final contactPhone = TextEditingController(text: existing?.contactPhone);
-    final programs = TextEditingController(text: existing?.programs.join(', '));
     final remarks = TextEditingController(text: existing?.remarks);
-    var status = existing?.status ?? 'Active';
+    var programs = _programSelection(existing?.programs ?? const []);
+    const statuses = ['Active', 'Inactive'];
+    var status = statuses.contains(existing?.status)
+        ? existing!.status
+        : 'Active';
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(
-            existing == null
-                ? 'Register Partner Institution'
-                : 'Edit Partner Institution',
-          ),
-          content: SizedBox(
-            width: 680,
-            child: SingleChildScrollView(
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _field(name, 'Institution / company name'),
-                  _field(type, 'Institution type'),
-                  _field(industry, 'Industry / field'),
-                  _field(programs, 'Programs covered (comma separated)'),
-                  _field(contactName, 'Contact person'),
-                  _field(contactEmail, 'Contact email'),
-                  _field(contactPhone, 'Contact phone'),
-                  SizedBox(
-                    width: 310,
-                    child: DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: status,
-                      decoration: const InputDecoration(
-                        labelText: 'Partner status',
-                      ),
-                      items: const ['Active', 'Inactive']
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) =>
-                          setDialogState(() => status = value ?? 'Active'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 632,
-                    child: TextField(
-                      controller: address,
-                      minLines: 2,
-                      maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'Address'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 632,
-                    child: TextField(
-                      controller: remarks,
-                      minLines: 2,
-                      maxLines: 4,
-                      decoration: const InputDecoration(labelText: 'Remarks'),
-                    ),
-                  ),
-                ],
+    await showWorkspaceEditorDialog(
+      context,
+      title: existing == null
+          ? 'Register partner institution'
+          : 'Edit partner institution',
+      saveLabel: existing == null ? 'Register partner' : 'Save changes',
+      fields: (context, update) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 22,
+        children: [
+          WorkspaceFormSection(
+            title: 'Institution details',
+            children: [
+              _field(
+                name,
+                'Institution / company name',
+                requiredMessage: 'Enter the institution name.',
               ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  await widget.repository.savePartnerInstitution(
-                    actor: widget.user,
-                    id: existing?.id,
-                    name: name.text,
-                    address: address.text,
-                    institutionType: type.text,
-                    industryField: industry.text,
-                    contactName: contactName.text,
-                    contactEmail: contactEmail.text,
-                    contactPhone: contactPhone.text,
-                    programs: _split(programs.text),
-                    status: status,
-                    remarks: remarks.text,
-                  );
-                  if (dialogContext.mounted) Navigator.pop(dialogContext);
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('$error')));
-                  }
-                }
-              },
-              child: Text(
-                existing == null ? 'Register Partner' : 'Save Changes',
+              WorkspaceFormPair(
+                _field(type, 'Institution type'),
+                _field(industry, 'Industry / field'),
               ),
-            ),
-          ],
-        ),
+              WorkspaceSelectField(
+                label: 'Partner status',
+                options: statuses,
+                initialValue: status,
+                onChanged: (value) => status = value,
+              ),
+            ],
+          ),
+          WorkspaceFormSection(
+            title: 'Contact details',
+            children: [
+              WorkspaceFormPair(
+                _field(contactName, 'Contact person'),
+                _field(
+                  contactPhone,
+                  'Contact phone',
+                  keyboard: TextInputType.phone,
+                ),
+              ),
+              _field(
+                contactEmail,
+                'Contact email',
+                keyboard: TextInputType.emailAddress,
+              ),
+              _field(address, 'Address', maxLines: 2),
+            ],
+          ),
+          _ProgramCoverage(
+            selected: programs,
+            onChanged: (value) => update(() => programs = value),
+          ),
+          _field(remarks, 'Remarks', maxLines: 3),
+        ],
       ),
+      onSave: () async {
+        await widget.repository.savePartnerInstitution(
+          actor: widget.user,
+          id: existing?.id,
+          name: name.text,
+          address: address.text,
+          institutionType: type.text,
+          industryField: industry.text,
+          contactName: contactName.text,
+          contactEmail: contactEmail.text,
+          contactPhone: contactPhone.text,
+          programs: programs.toList(),
+          status: status,
+          remarks: remarks.text,
+        );
+      },
     );
 
     for (final controller in [
@@ -554,7 +527,6 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
       contactName,
       contactEmail,
       contactPhone,
-      programs,
       remarks,
     ]) {
       controller.dispose();
@@ -608,215 +580,209 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
         .first;
     if (!context.mounted) return;
     String? selectedPartnerId = existing?.partnerId;
+    final partnerOptions = {
+      '': 'Enter partner manually',
+      if (selectedPartnerId != null) selectedPartnerId: existing!.partnerName,
+      for (final record in registeredPartners) record.id: record.name,
+    };
     final partner = TextEditingController(text: existing?.partnerName);
     final number = TextEditingController(text: existing?.moaNumber);
-    final programs = TextEditingController(text: existing?.programs.join(', '));
     final contactName = TextEditingController(text: existing?.contactName);
     final contactEmail = TextEditingController(text: existing?.contactEmail);
     final contactPhone = TextEditingController(text: existing?.contactPhone);
     final remarks = TextEditingController(text: existing?.remarks);
+    var programs = _programSelection(existing?.programs ?? const []);
     var startDate = existing?.startDate ?? DateTime.now();
     var endDate =
         existing?.endDate ?? DateTime.now().add(const Duration(days: 365));
     var manualStatus = existing?.manualStatus;
     PlatformFile? file;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(existing == null ? 'Create MOA' : 'Edit MOA details'),
-          content: SizedBox(
-            width: 680,
-            child: SingleChildScrollView(
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  SizedBox(
-                    width: 310,
-                    child: DropdownButtonFormField<String?>(
-                      isExpanded: true,
-                      initialValue: selectedPartnerId,
-                      decoration: const InputDecoration(
-                        labelText: 'Registered partner (optional)',
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('Manual / not yet registered'),
-                        ),
-                        ...registeredPartners.map(
-                          (record) => DropdownMenuItem<String?>(
-                            value: record.id,
-                            child: Text(
-                              record.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedPartnerId = value;
-                          final selected = registeredPartners
-                              .where((record) => record.id == value)
-                              .firstOrNull;
-                          if (selected != null) {
-                            partner.text = selected.name;
-                            programs.text = selected.programs.join(', ');
-                            contactName.text = selected.contactName;
-                            contactEmail.text = selected.contactEmail;
-                            contactPhone.text = selected.contactPhone;
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  _field(partner, 'Partner institution'),
-                  _field(number, 'Reference number'),
-                  _field(programs, 'Programs (comma separated)'),
-                  _field(contactName, 'Contact person'),
-                  _field(contactEmail, 'Contact email'),
-                  _field(contactPhone, 'Contact phone'),
-                  _date(
-                    context,
-                    'Date signed',
-                    startDate,
-                    (value) => setDialogState(() => startDate = value),
-                  ),
-                  _date(
-                    context,
-                    'Expiration date',
-                    endDate,
-                    (value) => setDialogState(() => endDate = value),
-                  ),
-                  SizedBox(
-                    width: 310,
-                    child: DropdownButtonFormField<String?>(
-                      isExpanded: true,
-                      initialValue: manualStatus,
-                      decoration: const InputDecoration(
-                        labelText: 'Manual status',
-                      ),
-                      items: const [
-                        DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('Automatic'),
-                        ),
-                        DropdownMenuItem<String?>(
-                          value: 'for_renewal',
-                          child: Text('For renewal'),
-                        ),
-                      ],
-                      onChanged: (value) =>
-                          setDialogState(() => manualStatus = value),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 310,
-                    child: OutlinedButton.icon(
+
+    await showWorkspaceEditorDialog(
+      context,
+      title: existing == null ? 'Create MOA' : 'Edit MOA details',
+      saveLabel: existing == null ? 'Create MOA' : 'Save changes',
+      fields: (dialogContext, update) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 22,
+        children: [
+          WorkspaceFormSection(
+            title: 'Agreement details',
+            children: [
+              WorkspaceSelectField(
+                label: 'Registered partner (optional)',
+                initialValue: selectedPartnerId ?? '',
+                options: partnerOptions.keys.toList(),
+                optionLabel: (id) => partnerOptions[id]!,
+                onChanged: (id) => update(() {
+                  selectedPartnerId = id.isEmpty ? null : id;
+                  final selected = registeredPartners
+                      .where((record) => record.id == id)
+                      .firstOrNull;
+                  if (selected == null) return;
+                  partner.text = selected.name;
+                  programs = _programSelection(selected.programs);
+                  contactName.text = selected.contactName;
+                  contactEmail.text = selected.contactEmail;
+                  contactPhone.text = selected.contactPhone;
+                }),
+              ),
+              WorkspaceFormPair(
+                _field(
+                  partner,
+                  'Partner institution',
+                  requiredMessage: 'Enter the partner institution.',
+                ),
+                _field(
+                  number,
+                  'Reference number',
+                  requiredMessage: 'Enter the MOA reference number.',
+                ),
+              ),
+              WorkspaceFormPair(
+                _date(
+                  dialogContext,
+                  'Date signed',
+                  startDate,
+                  (value) => update(() => startDate = value),
+                ),
+                _date(
+                  dialogContext,
+                  'Expiration date',
+                  endDate,
+                  (value) => update(() => endDate = value),
+                ),
+              ),
+              WorkspaceSelectField(
+                label: 'Agreement status',
+                options: const ['Automatic', 'For renewal'],
+                initialValue: manualStatus == 'for_renewal'
+                    ? 'For renewal'
+                    : 'Automatic',
+                onChanged: (value) => manualStatus = value == 'For renewal'
+                    ? 'for_renewal'
+                    : null,
+              ),
+            ],
+          ),
+          _ProgramCoverage(
+            selected: programs,
+            onChanged: (value) => update(() => programs = value),
+          ),
+          WorkspaceFormSection(
+            title: 'Contact details',
+            children: [
+              WorkspaceFormPair(
+                _field(contactName, 'Contact person'),
+                _field(
+                  contactPhone,
+                  'Contact phone',
+                  keyboard: TextInputType.phone,
+                ),
+              ),
+              _field(
+                contactEmail,
+                'Contact email',
+                keyboard: TextInputType.emailAddress,
+              ),
+            ],
+          ),
+          WorkspaceFormSection(
+            title: 'Agreement document',
+            children: [
+              FormField<PlatformFile>(
+                validator: (value) => existing == null && value == null
+                    ? 'Choose the MOA document.'
+                    : null,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                builder: (field) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 6,
+                  children: [
+                    OutlinedButton.icon(
                       onPressed: () async {
-                        final selected = await FilePicker.pickFile(
+                        final picked = await FilePicker.pickFile(
                           type: FileType.custom,
                           allowedExtensions: ['pdf', 'doc', 'docx'],
                         );
-                        if (selected != null) {
-                          setDialogState(() => file = selected);
+                        if (picked != null && field.mounted) {
+                          file = picked;
+                          field.didChange(picked);
                         }
                       },
-                      icon: const Icon(Icons.attach_file),
+                      icon: const Icon(Icons.attach_file_rounded, size: 19),
                       label: Text(
                         file?.name ??
-                            (existing?.fileName ?? 'Choose MOA document'),
+                            existing?.fileName ??
+                            'Choose MOA document',
                       ),
                     ),
-                  ),
-                  SizedBox(
-                    width: 632,
-                    child: TextField(
-                      controller: remarks,
-                      minLines: 2,
-                      maxLines: 4,
-                      decoration: const InputDecoration(labelText: 'Remarks'),
-                    ),
-                  ),
-                ],
+                    if (field.errorText case final error?)
+                      Text(
+                        error,
+                        style: const TextStyle(color: AppTheme.danger),
+                      ),
+                  ],
+                ),
               ),
-            ),
+              _field(remarks, 'Remarks', maxLines: 3),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  if (existing == null) {
-                    if (file == null) {
-                      throw ArgumentError('Choose the MOA document.');
-                    }
-                    await widget.repository.addMoa(
-                      actor: widget.user,
-                      partnerName: partner.text,
-                      partnerId: selectedPartnerId,
-                      moaNumber: number.text,
-                      startDate: startDate,
-                      endDate: endDate,
-                      file: file!,
-                      programs: _split(programs.text),
-                      contactName: contactName.text,
-                      contactEmail: contactEmail.text,
-                      contactPhone: contactPhone.text,
-                      remarks: remarks.text,
-                    );
-                  } else {
-                    if (file != null) {
-                      await widget.repository.renewMoa(
-                        actor: widget.user,
-                        record: existing,
-                        endDate: endDate,
-                        replacementFile: file,
-                      );
-                    }
-                    await widget.repository.updateMoaDetails(
-                      actor: widget.user,
-                      record: existing,
-                      partnerName: partner.text,
-                      partnerId: selectedPartnerId,
-                      moaNumber: number.text,
-                      startDate: startDate,
-                      endDate: endDate,
-                      programs: _split(programs.text),
-                      contactName: contactName.text,
-                      contactEmail: contactEmail.text,
-                      contactPhone: contactPhone.text,
-                      remarks: remarks.text,
-                      manualStatus: manualStatus,
-                    );
-                  }
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext);
-                  }
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('$error')));
-                  }
-                }
-              },
-              child: Text(existing == null ? 'Create MOA' : 'Save changes'),
-            ),
-          ],
-        ),
+        ],
       ),
+      onSave: () async {
+        if (!endDate.isAfter(startDate)) {
+          throw ArgumentError(
+            'The expiration date must be after the signed date.',
+          );
+        }
+        if (existing == null) {
+          await widget.repository.addMoa(
+            actor: widget.user,
+            partnerName: partner.text,
+            partnerId: selectedPartnerId,
+            moaNumber: number.text,
+            startDate: startDate,
+            endDate: endDate,
+            file: file!,
+            programs: programs.toList(),
+            contactName: contactName.text,
+            contactEmail: contactEmail.text,
+            contactPhone: contactPhone.text,
+            remarks: remarks.text,
+            manualStatus: manualStatus,
+          );
+          return;
+        }
+        if (file != null) {
+          await widget.repository.renewMoa(
+            actor: widget.user,
+            record: existing,
+            endDate: endDate,
+            replacementFile: file,
+          );
+        }
+        await widget.repository.updateMoaDetails(
+          actor: widget.user,
+          record: existing,
+          partnerName: partner.text,
+          partnerId: selectedPartnerId,
+          moaNumber: number.text,
+          startDate: startDate,
+          endDate: endDate,
+          programs: programs.toList(),
+          contactName: contactName.text,
+          contactEmail: contactEmail.text,
+          contactPhone: contactPhone.text,
+          remarks: remarks.text,
+          manualStatus: manualStatus,
+        );
+      },
     );
+
     for (final controller in [
       partner,
       number,
-      programs,
       contactName,
       contactEmail,
       contactPhone,
@@ -971,12 +937,29 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
     }
   }
 
-  Widget _field(TextEditingController controller, String label) => SizedBox(
-    width: 310,
-    child: TextField(
-      controller: controller,
-      decoration: InputDecoration(labelText: label),
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    String? requiredMessage,
+    TextInputType? keyboard,
+    int maxLines = 1,
+  }) => TextFormField(
+    controller: controller,
+    keyboardType: keyboard,
+    minLines: 1,
+    maxLines: maxLines,
+    decoration: InputDecoration(
+      labelText: requiredMessage == null ? label : '$label *',
     ),
+    autovalidateMode: AutovalidateMode.onUserInteraction,
+    validator: (value) {
+      final text = value?.trim() ?? '';
+      if (text.isEmpty) return requiredMessage;
+      if (keyboard == TextInputType.emailAddress && !text.contains('@')) {
+        return 'Enter a valid contact email.';
+      }
+      return null;
+    },
   );
 
   Widget _date(
@@ -984,30 +967,72 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
     String label,
     DateTime value,
     ValueChanged<DateTime> onChanged,
-  ) => SizedBox(
-    width: 310,
-    child: OutlinedButton.icon(
-      icon: const Icon(Icons.calendar_month_outlined),
-      label: Text('$label: ${shortDate(value)}'),
-      onPressed: () async {
-        final selected = await showDatePicker(
-          context: context,
-          firstDate: DateTime(2000),
-          lastDate: DateTime(2100),
-          initialDate: value,
-        );
-        if (selected != null) {
-          onChanged(selected);
-        }
-      },
+  ) => OutlinedButton.icon(
+    style: OutlinedButton.styleFrom(
+      alignment: AlignmentDirectional.centerStart,
+      minimumSize: const Size(0, 50),
     ),
+    icon: const Icon(Icons.calendar_month_outlined),
+    label: Text('$label: ${shortDate(value)}'),
+    onPressed: () async {
+      final selected = await showDatePicker(
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+        initialDate: value,
+      );
+      if (selected != null && context.mounted) {
+        onChanged(selected);
+      }
+    },
   );
 
-  List<String> _split(String value) => value
-      .split(',')
-      .map((item) => item.trim())
-      .where((item) => item.isNotEmpty)
-      .toList();
+  Set<String> _programSelection(List<String> values) => values
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty && value != 'All Programs')
+      .map((value) => canonicalCasProgram(value) ?? value)
+      .toSet();
+}
+
+class _ProgramCoverage extends StatelessWidget {
+  const _ProgramCoverage({required this.selected, required this.onChanged});
+
+  final Set<String> selected;
+  final ValueChanged<Set<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) => WorkspaceFormSection(
+    title: 'Programs covered',
+    children: [
+      Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          ChoiceChip(
+            selected: selected.isEmpty,
+            label: const Text('All programs'),
+            onSelected: (active) {
+              if (active) onChanged({});
+            },
+          ),
+          for (final program in {...casPrograms, ...selected})
+            FilterChip(
+              selected: selected.contains(program),
+              label: Text(program.replaceFirst('Bachelor of Science in ', '')),
+              onSelected: (active) {
+                final programs = {...selected};
+                if (active) {
+                  programs.add(program);
+                } else {
+                  programs.remove(program);
+                }
+                onChanged(programs);
+              },
+            ),
+        ],
+      ),
+    ],
+  );
 }
 
 class _MoaStats extends StatelessWidget {
