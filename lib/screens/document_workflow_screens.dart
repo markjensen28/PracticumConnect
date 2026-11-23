@@ -761,29 +761,16 @@ class _StudentRequirementsChecklistScreenState
                       ),
                       SizedBox(
                         width: 190,
-                        child: DropdownButtonFormField<String>(
-                          isExpanded: true,
+                        child: WorkspaceSelectField(
+                          label: 'Checklist Status',
                           initialValue: _filter,
-                          decoration: const InputDecoration(
-                            labelText: 'Checklist Status',
-                          ),
-                          items:
-                              const [
-                                    'All Requirements',
-                                    'Completed',
-                                    'Submitted',
-                                    'Needs Attention',
-                                  ]
-                                  .map(
-                                    (value) => DropdownMenuItem(
-                                      value: value,
-                                      child: Text(value),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (value) => setState(
-                            () => _filter = value ?? 'All Requirements',
-                          ),
+                          options: const [
+                            'All Requirements',
+                            'Completed',
+                            'Submitted',
+                            'Needs Attention',
+                          ],
+                          onChanged: (value) => setState(() => _filter = value),
                         ),
                       ),
                       if (widget.user.program?.isNotEmpty == true)
@@ -1203,6 +1190,9 @@ class _DocumentSubmissionBinScreenState
             'All Document Types',
             ...allDefinitions.map((definition) => definition.category),
           }.toList();
+          final categoryFilter = categories.contains(_category)
+              ? _category
+              : 'All Document Types';
           final definitions = allDefinitions.where((definition) {
             final record = _recordFor(definition, records);
             final locallySubmitted = _locallySubmittedDefinitions.contains(
@@ -1223,8 +1213,8 @@ class _DocumentSubmissionBinScreenState
                           ) ==
                           _status);
             final matchesCategory =
-                _category == 'All Document Types' ||
-                definition.category == _category;
+                categoryFilter == 'All Document Types' ||
+                definition.category == categoryFilter;
             return matchesQuery && matchesStatus && matchesCategory;
           }).toList();
           final initialDefinitionId = widget.initialDefinitionId;
@@ -1246,6 +1236,7 @@ class _DocumentSubmissionBinScreenState
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
                     width: 250,
@@ -1279,68 +1270,31 @@ class _DocumentSubmissionBinScreenState
                   ),
                   _filterBox(
                     width: 180,
-                    child: DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: categories.contains(_category)
-                          ? _category
-                          : 'All Document Types',
-                      decoration: const InputDecoration(
-                        labelText: 'Document Type',
-                        labelStyle: TextStyle(fontSize: AppTheme.fontSmall),
-                      ),
-                      items: categories
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(
-                                value == 'All Document Types'
-                                    ? 'All types'
-                                    : value,
-                                style: const TextStyle(
-                                  fontSize: AppTheme.fontBody,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) => setState(
-                        () => _category = value ?? 'All Document Types',
-                      ),
+                    child: WorkspaceSelectField(
+                      key: ValueKey(categoryFilter),
+                      label: 'Document Type',
+                      initialValue: categoryFilter,
+                      options: categories,
+                      optionLabel: (value) =>
+                          value == 'All Document Types' ? 'All types' : value,
+                      onChanged: (value) => setState(() => _category = value),
                     ),
                   ),
                   _filterBox(
                     width: 160,
-                    child: DropdownButtonFormField<String>(
-                      isExpanded: true,
+                    child: WorkspaceSelectField(
+                      label: 'Status',
                       initialValue: _status,
-                      decoration: const InputDecoration(
-                        labelText: 'Status',
-                        labelStyle: TextStyle(fontSize: AppTheme.fontSmall),
-                      ),
-                      items:
-                          const [
-                                'All Statuses',
-                                'Not submitted',
-                                'Submitted',
-                                'Under review',
-                                'Verified',
-                                'Needs revision',
-                                'Rejected',
-                              ]
-                              .map(
-                                (value) => DropdownMenuItem(
-                                  value: value,
-                                  child: Text(
-                                    value,
-                                    style: const TextStyle(
-                                      fontSize: AppTheme.fontBody,
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (value) =>
-                          setState(() => _status = value ?? 'All Statuses'),
+                      options: const [
+                        'All Statuses',
+                        'Not submitted',
+                        'Submitted',
+                        'Under review',
+                        'Verified',
+                        'Needs revision',
+                        'Rejected',
+                      ],
+                      onChanged: (value) => setState(() => _status = value),
                     ),
                   ),
                 ],
@@ -4622,25 +4576,43 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'Requirement Submission Bins',
-    subtitle:
-        'Configure document instructions, forms, programs, and deadlines.',
+    subtitle: user.role == UserRole.admin
+        ? 'Configure document instructions, forms, programs, and deadlines.'
+        : 'View and remove requirement bins for your program.',
     actions: [
-      FilledButton.icon(
-        onPressed: () => _showEditor(context),
-        icon: const Icon(Icons.add),
-        label: const Text('New requirement'),
-      ),
+      if (user.role == UserRole.admin)
+        FilledButton.icon(
+          onPressed: () => _showEditor(context),
+          icon: const Icon(Icons.add),
+          label: const Text('New requirement'),
+        ),
     ],
     child: StreamBuilder<List<RequirementDefinition>>(
       stream: repository.watchRequirementDefinitions(),
       builder: (context, snapshot) {
-        final definitions = snapshot.data ?? const <RequirementDefinition>[];
+        if (snapshot.hasError) {
+          return const Center(child: Text('Could not load requirement bins.'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final program = user.casProgram;
+        final definitions = snapshot.data!
+            .where(
+              (definition) =>
+                  definition.active &&
+                  (user.role == UserRole.admin ||
+                      (program != null &&
+                          canonicalCasProgram(definition.program) == program)),
+            )
+            .toList();
         if (definitions.isEmpty) {
-          return const EmptyWorkflowState(
+          return EmptyWorkflowState(
             icon: Icons.inbox_outlined,
             title: 'No submission bins configured',
-            message:
-                'Create requirements so students can upload their documents.',
+            message: user.role == UserRole.admin
+                ? 'Create requirements so students can upload their documents.'
+                : 'Requirement bins for your program will appear here.',
           );
         }
         return LayoutBuilder(
@@ -4663,8 +4635,10 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
                         width: width,
                         child: _RequirementBinCard(
                           definition: definition,
-                          onEdit: () =>
-                              _showEditor(context, existing: definition),
+                          onEdit: user.role == UserRole.admin
+                              ? () => _showEditor(context, existing: definition)
+                              : null,
+                          onRemove: () => _removeBin(context, definition),
                         ),
                       ),
                   ],
@@ -4676,6 +4650,22 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
       },
     ),
   );
+
+  Future<void> _removeBin(
+    BuildContext context,
+    RequirementDefinition definition,
+  ) async {
+    await showWorkspaceEditorDialog(
+      context,
+      title: 'Remove requirement bin?',
+      saveLabel: 'Remove bin',
+      width: 420,
+      fields: (context, update) => Text(
+        'Remove “${definition.title}” from the active requirements. Existing submissions stay in the repository.',
+      ),
+      onSave: () => repository.removeRequirementDefinition(user, definition.id),
+    );
+  }
 
   Future<void> _showEditor(
     BuildContext context, {
@@ -4899,10 +4889,15 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
 }
 
 class _RequirementBinCard extends StatelessWidget {
-  const _RequirementBinCard({required this.definition, required this.onEdit});
+  const _RequirementBinCard({
+    required this.definition,
+    required this.onEdit,
+    required this.onRemove,
+  });
 
   final RequirementDefinition definition;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -4922,10 +4917,16 @@ class _RequirementBinCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
+              if (onEdit != null)
+                IconButton(
+                  tooltip: 'Edit ${definition.title}',
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                ),
               IconButton(
-                tooltip: 'Edit ${definition.title}',
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined, size: 20),
+                tooltip: 'Remove ${definition.title}',
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline, size: 20),
               ),
             ],
           ),

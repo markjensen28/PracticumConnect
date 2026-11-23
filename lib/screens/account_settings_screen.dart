@@ -5,6 +5,7 @@ import '../core/app_theme.dart';
 import '../models/app_user.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class AccountSettingsScreen extends StatelessWidget {
   const AccountSettingsScreen({
@@ -190,43 +191,42 @@ class AccountSettingsScreen extends StatelessWidget {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
+          scrollable: true,
           title: Text(
             user.role == UserRole.student
                 ? 'Remind me before the deadline'
                 : 'Remind me after submission',
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                initialValue: amount,
-                onChanged: (value) => amount = value,
-                enabled: !saving,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Time',
-                  errorText: error,
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 12,
+              children: [
+                TextFormField(
+                  initialValue: amount,
+                  onChanged: (value) => amount = value,
+                  enabled: !saving,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Time',
+                    errorText: error,
+                  ),
                 ),
-              ),
-              DropdownButtonFormField<bool>(
-                initialValue: days,
-                decoration: const InputDecoration(labelText: 'Unit'),
-                items: const [
-                  DropdownMenuItem(value: true, child: Text('Days')),
-                  DropdownMenuItem(value: false, child: Text('Hours')),
-                ],
-                onChanged: saving
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          update(() {
-                            days = value;
-                            error = null;
-                          });
-                        }
-                      },
-              ),
-            ],
+                WorkspaceSelectField(
+                  label: 'Unit',
+                  initialValue: days,
+                  options: const [true, false],
+                  optionLabel: (value) => value ? 'Days' : 'Hours',
+                  enabled: !saving,
+                  onChanged: (value) => update(() {
+                    days = value;
+                    error = null;
+                  }),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

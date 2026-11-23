@@ -8,6 +8,7 @@ import '../services/practicum_repository.dart';
 import 'document_workflow_screens.dart';
 import 'student_profile_screen.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class StudentNotificationPanelScreen extends StatefulWidget {
   const StudentNotificationPanelScreen({
@@ -26,6 +27,20 @@ class StudentNotificationPanelScreen extends StatefulWidget {
 
 class _StudentNotificationPanelScreenState
     extends State<StudentNotificationPanelScreen> {
+  static const _typeLabels = {
+    'all': 'All Types',
+    'general': 'General',
+    'document_feedback': 'Document Feedback',
+    'deadline': 'Deadline',
+    'verification_reminder': 'Verification reminder',
+    'status_update': 'Status Update',
+    'document_submission': 'Document Submission',
+    'dtr_submission': 'DTR Submission',
+    'dtr_update': 'DTR Update',
+    'assignment': 'Assignment',
+    'evaluation': 'Evaluation',
+  };
+
   String _query = '';
   String _type = 'all';
   String _dateFilter = 'All Dates';
@@ -215,89 +230,58 @@ class _StudentNotificationPanelScreenState
               ],
             ),
             const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    SizedBox(
-                      width: 270,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search, size: 18),
-                          hintText: 'Search notifications…',
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const spacing = 10.0;
+                  final wide = constraints.maxWidth >= 660;
+                  final filterWidth = constraints.maxWidth - spacing;
+                  final typeWidth = wide ? 210.0 : filterWidth * .55;
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: wide ? 270 : constraints.maxWidth,
+                        child: TextField(
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search, size: 18),
+                            hintText: 'Search notifications…',
+                          ),
+                          onChanged: (value) =>
+                              setState(() => _query = value.toLowerCase()),
                         ),
-                        onChanged: (value) =>
-                            setState(() => _query = value.toLowerCase()),
                       ),
-                    ),
-                    SizedBox(
-                      width: 170,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: _type,
-                        decoration: const InputDecoration(
-                          labelText: 'All Types',
+                      SizedBox(
+                        width: typeWidth,
+                        child: WorkspaceSelectField(
+                          label: 'Type',
+                          initialValue: _type,
+                          options: _typeLabels.keys.toList(),
+                          optionLabel: (type) => _typeLabels[type]!,
+                          onChanged: (value) => setState(() => _type = value),
                         ),
-                        items:
-                            const {
-                                  'all': 'All Types',
-                                  'general': 'General',
-                                  'document_feedback': 'Document Feedback',
-                                  'deadline': 'Deadline',
-                                  'verification_reminder':
-                                      'Verification reminder',
-                                  'status_update': 'Status Update',
-                                  'document_submission': 'Document Submission',
-                                  'dtr_submission': 'DTR Submission',
-                                  'dtr_update': 'DTR Update',
-                                  'assignment': 'Assignment',
-                                  'evaluation': 'Evaluation',
-                                }.entries
-                                .map(
-                                  (entry) => DropdownMenuItem(
-                                    value: entry.key,
-                                    child: Text(entry.value),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (value) =>
-                            setState(() => _type = value ?? 'all'),
                       ),
-                    ),
-                    SizedBox(
-                      width: 160,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: _dateFilter,
-                        decoration: const InputDecoration(labelText: 'Date'),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'All Dates',
-                            child: Text('All Dates'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Today',
-                            child: Text('Today'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Last 7 Days',
-                            child: Text('Last 7 Days'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'Last 30 Days',
-                            child: Text('Last 30 Days'),
-                          ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _dateFilter = value ?? 'All Dates'),
+                      SizedBox(
+                        width: wide ? 160 : filterWidth - typeWidth,
+                        child: WorkspaceSelectField(
+                          label: 'Date',
+                          initialValue: _dateFilter,
+                          options: const [
+                            'All Dates',
+                            'Today',
+                            'Last 7 Days',
+                            'Last 30 Days',
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _dateFilter = value),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                },
               ),
             ),
             const SizedBox(height: 9),
@@ -453,52 +437,49 @@ class _NotificationList extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 5),
-                      PopupMenuButton<String>(
-                        tooltip: 'Notification actions',
-                        icon: const Icon(
-                          Icons.more_horiz,
-                          size: 16,
-                          color: AppTheme.muted,
+                      MenuAnchor(
+                        style: workspaceMenuStyle(
+                          width: 152,
+                          alignment: AlignmentDirectional.bottomEnd,
                         ),
-                        onSelected: (value) {
-                          switch (value) {
-                            case 'view':
-                              onView(notice);
-                              break;
-                            case 'delete':
-                              onDelete(notice);
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem<String>(
-                            value: 'view',
-                            child: Row(
-                              children: [
-                                Icon(Icons.visibility_outlined, size: 18),
-                                SizedBox(width: 10),
-                                Text('View'),
-                              ],
+                        alignmentOffset: const Offset(0, 6),
+                        menuChildren: [
+                          MenuItemButton(
+                            style: workspaceMenuItemStyle(),
+                            leadingIcon: const Icon(
+                              Icons.visibility_outlined,
+                              size: 18,
                             ),
+                            onPressed: () => onView(notice),
+                            child: const Text('View'),
                           ),
-                          PopupMenuItem<String>(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.delete_outline_rounded,
-                                  size: 18,
-                                  color: AppTheme.danger,
-                                ),
-                                SizedBox(width: 10),
-                                Text(
-                                  'Delete',
-                                  style: TextStyle(color: AppTheme.danger),
-                                ),
-                              ],
+                          MenuItemButton(
+                            style: workspaceMenuItemStyle(),
+                            leadingIcon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                              color: AppTheme.danger,
+                            ),
+                            onPressed: () => onDelete(notice),
+                            child: const Text(
+                              'Delete',
+                              style: TextStyle(color: AppTheme.danger),
                             ),
                           ),
                         ],
+                        builder: (context, menu, child) => Semantics(
+                          expanded: menu.isOpen,
+                          child: IconButton(
+                            tooltip: 'Notification actions',
+                            onPressed: () =>
+                                menu.isOpen ? menu.close() : menu.open(),
+                            icon: const Icon(
+                              Icons.more_horiz,
+                              size: 18,
+                              color: AppTheme.muted,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),

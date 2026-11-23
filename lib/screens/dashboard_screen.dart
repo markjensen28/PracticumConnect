@@ -10,6 +10,7 @@ import '../models/records.dart';
 import '../services/app_controller.dart';
 import '../services/practicum_repository.dart';
 import 'module_screens.dart';
+import 'workspace_select_field.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, required this.controller});
@@ -564,23 +565,39 @@ class _TopBar extends StatelessWidget {
                 icon: const Icon(Icons.notifications_none_rounded, size: 22),
               ),
             SizedBox(width: desktop ? 7 : 2),
-            PopupMenuButton<String>(
-              tooltip: 'Account menu',
-              onSelected: (value) {
-                if (value == 'logout') onLogout();
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout_rounded, size: 18),
-                      SizedBox(width: 10),
-                      Text('Sign out'),
-                    ],
-                  ),
+            MenuAnchor(
+              style: workspaceMenuStyle(
+                width: 152,
+                alignment: AlignmentDirectional.bottomEnd,
+              ),
+              alignmentOffset: const Offset(0, 6),
+              menuChildren: [
+                MenuItemButton(
+                  style: workspaceMenuItemStyle(),
+                  leadingIcon: const Icon(Icons.logout_rounded, size: 18),
+                  onPressed: onLogout,
+                  child: const Text('Sign out'),
                 ),
               ],
+              builder: (context, menu, child) => Semantics(
+                expanded: menu.isOpen,
+                child: Tooltip(
+                  message: 'Account menu',
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: EdgeInsets.zero,
+                      foregroundColor: AppTheme.text,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+                    child: child!,
+                  ),
+                ),
+              ),
               child: Container(
                 constraints: BoxConstraints(maxWidth: desktop ? 240 : 48),
                 padding: EdgeInsets.fromLTRB(

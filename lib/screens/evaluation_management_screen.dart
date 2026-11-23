@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
+import '../models/pdf_form_template.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
@@ -72,6 +73,17 @@ class _EvaluationManagementScreenState
               'Issue secure one-time evaluation links and monitor industry supervisor submissions.',
           eyebrow: 'Internship Monitoring  ›  Evaluations',
           actions: [
+            if (widget.user.role == UserRole.admin)
+              OutlinedButton.icon(
+                onPressed: () => showDefaultPdfTemplateSettings(
+                  context,
+                  repository: widget.repository,
+                  actor: widget.user,
+                  kind: SchoolTemplateKind.evaluation,
+                ),
+                icon: const Icon(Icons.description_outlined),
+                label: const Text('Default PDF'),
+              ),
             FilledButton.icon(
               onPressed: students.isEmpty
                   ? null
@@ -168,6 +180,14 @@ class _EvaluationManagementScreenState
     BuildContext context,
     List<AppUser> students,
   ) async {
+    final repository = widget.repository;
+    final defaultTemplate = await loadDefaultPdfTemplate(
+      context,
+      repository,
+      widget.user,
+      SchoolTemplateKind.evaluation,
+    );
+    if (!context.mounted) return;
     var selected = students.first;
     final company = TextEditingController();
     final supervisor = TextEditingController();
@@ -175,8 +195,8 @@ class _EvaluationManagementScreenState
     final validDays = TextEditingController(text: '14');
     final mailbox = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     PlatformFile? officialFile;
+    String? uploadedOverride;
     String? evaluationToken;
-    final repository = widget.repository;
 
     final saved = await showWorkspaceEditorDialog(
       context,
@@ -259,8 +279,9 @@ class _EvaluationManagementScreenState
                 },
               ),
               FormField<PlatformFile>(
-                validator: (value) =>
-                    value == null ? 'Select the approved editable PDF.' : null,
+                validator: (value) => value == null && defaultTemplate == null
+                    ? 'Select the approved editable PDF.'
+                    : null,
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 builder: (field) => Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -272,7 +293,10 @@ class _EvaluationManagementScreenState
                       ),
                       icon: const Icon(Icons.picture_as_pdf_outlined, size: 19),
                       label: Text(
-                        officialFile?.name ?? 'Select official editable PDF',
+                        officialFile?.name ??
+                            (defaultTemplate == null
+                                ? 'Select official editable PDF'
+                                : 'Default PDF · ${defaultTemplate.name}'),
                       ),
                       onPressed: () async {
                         final file = await FilePicker.pickFile(
@@ -281,10 +305,20 @@ class _EvaluationManagementScreenState
                         );
                         if (file != null && field.mounted) {
                           officialFile = file;
+                          uploadedOverride = null;
                           field.didChange(file);
                         }
                       },
                     ),
+                    if (defaultTemplate != null && officialFile != null)
+                      TextButton(
+                        onPressed: () {
+                          officialFile = null;
+                          uploadedOverride = null;
+                          field.didChange(null);
+                        },
+                        child: const Text('Use default PDF'),
+                      ),
                     if (field.errorText case final error?)
                       Text(
                         error,
@@ -303,16 +337,27 @@ class _EvaluationManagementScreenState
             'Set the student’s academic year in their internship profile.',
           );
         }
-        if (PdfTemplateEngine.available) {
-          await PdfTemplateEngine.inspect(await officialFile!.readAsBytes());
+        final file = officialFile;
+        if (file != null && uploadedOverride == null) {
+          if (PdfTemplateEngine.available) {
+            final fields = await PdfTemplateEngine.inspect(
+              await file.readAsBytes(),
+            );
+            if (fields.isEmpty)
+              throw ArgumentError(
+                'Choose an evaluation PDF with editable fields.',
+              );
+          }
+          final template = await repository.savePdfFormTemplate(
+            actor: widget.user,
+            officialFile: file,
+            fields: const [],
+          );
+          uploadedOverride = template.officialPath;
         }
-        final template = await repository.savePdfFormTemplate(
-          actor: widget.user,
-          officialFile: officialFile,
-          fields: const [],
-        );
         evaluationToken = await repository.createSupervisorEvaluation(
-          templatePath: template.officialPath,
+          templatePath: uploadedOverride,
+          expectedDefaultPath: file == null ? defaultTemplate?.path : null,
           actor: widget.user,
           student: selected,
           companyName: company.text,

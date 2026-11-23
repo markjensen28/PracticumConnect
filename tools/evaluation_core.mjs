@@ -1,5 +1,6 @@
 import {creditedHours} from '../functions/attendance.mjs';
-import { checkPdf, documentBucket, evaluationBucket, invalid, readStoredFile, signedFileUrl, storageRequest } from './private_files.mjs';
+import { checkPdf, documentBucket, evaluationBucket, invalid, readStoredFile, removeStoredFile, signedFileUrl, storeEvaluationTemplate } from './private_files.mjs';
+import { inspectEvaluationTemplate, isTemplatePath, readDefaultTemplate } from './form_settings_core.mjs';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
@@ -326,18 +327,33 @@ export async function createStaffEvaluation({ authorization, body }) {
   const evaluationRef = db.collection('supervisor_evaluations').doc(token);
   const statusRef = db.collection('evaluation_status').doc();
 
-  const source = parsed.templatePath;
-  if (typeof source !== 'string' || source.split('/').length !== 3 ||
-      !source.startsWith(uid + '/form_templates/') || !/^[a-zA-Z0-9._-]+[.]pdf$/i.test(source.split('/')[2])) {
-    throw invalid('Select the approved editable evaluation PDF.');
+  const useDefault = parsed.templatePath == null;
+  const source = useDefault ? (await readDefaultTemplate(db, 'evaluation'))?.path : parsed.templatePath;
+  if (!isTemplatePath(source, useDefault ? undefined : uid)) {
+    throw invalid('Choose an editable evaluation PDF or set a default evaluation template.');
   }
-  const blank = await readStoredFile(documentBucket(), source, 5 * 1024 * 1024);
-  const official = await checkPdf(blank);
-  if (!official.getForm().getFields().length) throw invalid('The official evaluation PDF must have editable form fields.');
+  if (useDefault && parsed.expectedDefaultPath != null && parsed.expectedDefaultPath !== source) {
+    throw invalid('The default evaluation template changed. Reopen the form to use the current template.', 409);
+  }
+  let blank;
+  try {
+    blank = await readStoredFile(documentBucket(), source, 5 * 1024 * 1024);
+  } catch (error) {
+    if (!error.storageStatus) throw error;
+    console.warn('Evaluation template read failed', error.storageStatus, error.storageCode);
+    throw invalid(useDefault
+      ? 'The default evaluation template could not be read. Choose another PDF or ask the college administrator to replace the default.'
+      : 'The uploaded evaluation template could not be read from document storage. Check the Vercel storage project and document bucket.');
+  }
+  const { official, fields } = await inspectEvaluationTemplate(blank);
   const templatePath = token + '/official.pdf';
-  await storageRequest('', evaluationBucket, templatePath, {
-    method:'POST', headers:{'Content-Type':'application/pdf'}, body:blank,
-  });
+  try {
+    await storeEvaluationTemplate(templatePath, blank);
+  } catch (error) {
+    if (!error.storageStatus) throw error;
+    console.warn('Evaluation private copy failed', error.storageStatus, error.storageCode);
+    throw invalid('The template was read, but the private evaluation copy could not be saved. Check the evaluation bucket and Vercel’s server storage credentials.', 502);
+  }
 
   await db.runTransaction(async batch => {
     const currentProfile = await batch.get(profileSnapshot.ref);
@@ -349,7 +365,7 @@ export async function createStaffEvaluation({ authorization, body }) {
       templatePath,
       templateHash: digest(blank),
       pageCount: official.getPageCount(),
-      formFields: official.getForm().getFields().map(field => ({
+      formFields: fields.map(field => ({
         name: field.getName(), required: field.isRequired(),
       })),
       program: student.program || '', startDate: profile.startDate ?? null, endDate: profile.endDate ?? null,
@@ -378,6 +394,13 @@ export async function createStaffEvaluation({ authorization, body }) {
       status: 'pending',
       createdAt: FieldValue.serverTimestamp(),
     });
+  }).catch(async error => {
+    const saved = await evaluationRef.get().catch(() => null);
+    if (saved?.exists) return;
+    if (saved && !saved.exists) {
+      await removeStoredFile(evaluationBucket, templatePath).catch(() => {});
+    }
+    throw error;
   });
 
   return {

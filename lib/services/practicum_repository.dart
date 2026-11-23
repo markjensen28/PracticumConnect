@@ -1519,7 +1519,7 @@ class PracticumRepository {
     final reference = id == null
         ? _db.collection('requirement_definitions').doc()
         : _db.collection('requirement_definitions').doc(id);
-    await reference.set({
+    final changes = {
       'title': title.trim(),
       'description': description.trim(),
       'instructions': instructions.trim(),
@@ -1533,7 +1533,18 @@ class PracticumRepository {
       'updatedBy': actor.uid,
       'updatedAt': FieldValue.serverTimestamp(),
       if (id == null) 'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    if (id == null) {
+      await reference.set(changes);
+    } else {
+      await _db.runTransaction((transaction) async {
+        final current = await transaction.get(reference);
+        if (!current.exists || current.data()?['active'] == false) {
+          throw StateError('This requirement bin has been removed.');
+        }
+        transaction.set(reference, changes, SetOptions(merge: true));
+      });
+    }
     await _log(actor, 'Configured requirement bin: $title');
   }
 
@@ -1546,6 +1557,90 @@ class PracticumRepository {
     if (bytes.length > 5 * 1024 * 1024) {
       throw ArgumentError('Each template or sample must be at most 5 MB.');
     }
+  }
+
+  Future<Map<String, dynamic>> _formSettings(
+    AppUser actor,
+    Map<String, dynamic> request,
+  ) async {
+    final account = FirebaseAuth.instance.currentUser;
+    if (!actor.role.isStaff || account == null || account.uid != actor.uid) {
+      throw StateError(
+        'Sign in with your staff account to manage school forms.',
+      );
+    }
+    final token = await account.getIdToken();
+    final response = await http
+        .post(
+          Uri.parse(
+            AppConfig.coordinatorApprovalApiUrl,
+          ).resolve('/api/form-settings'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(request),
+        )
+        .timeout(const Duration(seconds: 25));
+    final Map<String, dynamic> data;
+    try {
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw StateError('The school form settings service is unavailable.');
+    }
+    if (response.statusCode != 200) {
+      throw StateError(
+        data['error'] as String? ?? 'Unable to update school forms.',
+      );
+    }
+    return data;
+  }
+
+  Future<DefaultPdfTemplate?> readDefaultPdfTemplate(
+    AppUser actor,
+    SchoolTemplateKind kind,
+  ) async {
+    final result = await _formSettings(actor, {
+      'action': 'get-default',
+      'kind': kind.name,
+    });
+    final template = result['template'] as Map<String, dynamic>?;
+    if (template == null) return null;
+    return (path: template['path'] as String, name: template['name'] as String);
+  }
+
+  Future<void> setDefaultPdfTemplate(
+    AppUser actor,
+    SchoolTemplateKind kind,
+    PlatformFile? file,
+  ) async {
+    if (actor.role != UserRole.admin) {
+      throw StateError(
+        'Only the college administrator can change default templates.',
+      );
+    }
+    if (file == null) {
+      await _formSettings(actor, {
+        'action': 'clear-default',
+        'kind': kind.name,
+      });
+      return;
+    }
+    final template = await savePdfFormTemplate(
+      actor: actor,
+      officialFile: file,
+      fields: const [],
+    );
+    await _formSettings(actor, {
+      'action': 'set-default',
+      'kind': kind.name,
+      'path': template.officialPath,
+      'name': template.officialName,
+    });
+  }
+
+  Future<void> removeRequirementDefinition(AppUser actor, String id) async {
+    await _formSettings(actor, {'action': 'remove-requirement', 'id': id});
   }
 
   /// Shared blank templates and samples only; completed personal copies are
@@ -1564,9 +1659,19 @@ class PracticumRepository {
     if (officialFile == null && existing == null) {
       throw ArgumentError('Upload the blank official PDF first.');
     }
-    if (fields.length > 200 ||
+    if (fields.length > maxPdfTemplateFields ||
         fields.map((field) => field.name).toSet().length != fields.length) {
-      throw ArgumentError('Use at most 200 fields with unique names.');
+      throw ArgumentError(
+        'Use at most $maxPdfTemplateFields fields with unique names.',
+      );
+    }
+    if (utf8
+            .encode(jsonEncode(fields.map((field) => field.toMap()).toList()))
+            .length >
+        750000) {
+      throw ArgumentError(
+        'The field configuration is too large. Shorten the prefilled values.',
+      );
     }
     for (final field in fields) {
       final issue = field.presetError;
@@ -1731,7 +1836,8 @@ class PracticumRepository {
     required String moaNumber,
     required DateTime startDate,
     required DateTime endDate,
-    required PlatformFile file,
+    required PlatformFile? file,
+    DefaultPdfTemplate? defaultTemplate,
     String? partnerId,
     List<String> programs = const [],
     String? contactName,
@@ -1751,11 +1857,18 @@ class PracticumRepository {
     if (!endDate.isAfter(startDate)) {
       throw ArgumentError('The expiry date must be after the start date.');
     }
-    final storagePath = await _uploadFile(
-      ownerId: actor.uid,
-      folder: 'moas',
-      file: file,
-    );
+    if (file == null && defaultTemplate == null) {
+      throw ArgumentError('Choose the MOA document or set a default template.');
+    }
+    final storagePath = file != null
+        ? await _uploadFile(ownerId: actor.uid, folder: 'moas', file: file)
+        : await _uploadBytes(
+            ownerId: actor.uid,
+            folder: 'moas',
+            fileName: 'default-moa.pdf',
+            bytes: await loadPdfTemplateFile(defaultTemplate!.path),
+            contentType: 'application/pdf',
+          );
     await _db.collection('moas').add({
       'partnerName': partnerName.trim(),
       'partnerId': partnerId,
@@ -1763,7 +1876,7 @@ class PracticumRepository {
       'startDate': Timestamp.fromDate(startDate),
       'endDate': Timestamp.fromDate(endDate),
       'storagePath': storagePath,
-      'fileName': file.name,
+      'fileName': file?.name ?? defaultTemplate!.name,
       'programs': programs,
       'contactName': contactName?.trim(),
       'contactEmail': contactEmail?.trim(),
@@ -2126,7 +2239,8 @@ class PracticumRepository {
     required String companyName,
     required String supervisorName,
     required String supervisorEmail,
-    required String templatePath,
+    required String? templatePath,
+    String? expectedDefaultPath,
     int validDays = 14,
   }) async {
     if (!actor.role.isStaff) {
@@ -2174,6 +2288,8 @@ class PracticumRepository {
         'supervisorName': supervisorName.trim(),
         'supervisorEmail': supervisorEmail.trim().toLowerCase(),
         'templatePath': templatePath,
+        if (expectedDefaultPath != null)
+          'expectedDefaultPath': expectedDefaultPath,
         'validDays': validDays,
       }),
     );
@@ -2931,7 +3047,7 @@ class PracticumRepository {
     }
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null || firebaseUser.uid != ownerId) {
-      throw StateError('Sign in again before capturing your attendance photo.');
+      throw StateError('Sign in again before uploading a file.');
     }
     await firebaseUser.getIdTokenResult(true);
     final path =
@@ -2948,7 +3064,7 @@ class PracticumRepository {
       if (error.statusCode == '403' &&
           error.message.toLowerCase().contains('row-level security')) {
         throw StateError(
-          'Supabase Storage blocked the check-in photo. Verify the storage '
+          'Supabase Storage blocked the file upload. Verify the storage '
           'bucket and Firebase third-party authentication policy.',
         );
       }

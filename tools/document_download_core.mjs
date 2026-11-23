@@ -61,7 +61,7 @@ export async function createDocumentDownload({ authorization, body }, dependenci
       return { status: 403, payload: { error: 'This document is not assigned to your account.' } };
     }
     const config = dependencies.config || process.env;
-    const bucket = config.SUPABASE_BUCKET || 'PracticumConnectStorage';
+    const bucket = config.SUPABASE_BUCKET?.trim() || 'PracticumConnectStorage';
     const isTemplate = folder === 'form_templates';
     if (isTemplate && ownerId !== decoded.uid && actor.role !== 'admin' &&
         !await isPublishedTemplate(db, actor, bucket, path)) {

@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
   const maxBytes = 5 * 1024 * 1024;
+  const maxFields = 400;
   let fontBytes;
 
   function library() {
@@ -31,7 +32,11 @@
   function describe(field) {
     const lib = library();
     if (field.isReadOnly() || field instanceof lib.PDFSignature || field instanceof lib.PDFButton) return null;
-    const base = { name: field.getName(), label: field.getName(), required: field.isRequired() };
+    const tooltip = field.acroField.dict.lookup(lib.PDFName.of('TU'));
+    const alternate = tooltip instanceof lib.PDFString || tooltip instanceof lib.PDFHexString
+      ? tooltip.decodeText().trim()
+      : '';
+    const base = { name: field.getName(), label: alternate || field.getName(), required: field.isRequired() };
     if (field instanceof lib.PDFTextField) {
       if (field.getText()?.trim()) throw new Error('The official form must be blank. Upload completed examples as the sample.');
       return { ...base, type: 'text', maxLength: field.getMaxLength(), multiline: field.isMultiline() };
@@ -117,11 +122,21 @@
     lockValue(field);
   }
 
+  function autoSizeText(field) {
+    const appearance = field.acroField.getDefaultAppearance() ?? '';
+    if (/\/[^\s\0]+[\s\0]*(?:\d*\.\d+|\d+)?[\s\0]+Tf/.test(appearance)) {
+      field.setFontSize(0);
+    } else {
+      // Some PDF producers define a font on the widget but omit it on the field.
+      field.acroField.setDefaultAppearance('0 g /Helv 0 Tf');
+    }
+  }
+
   root.sipPdfTemplates = {
     async inspect(bytes) {
       const doc = await open(bytes);
       const fields = doc.getForm().getFields().map(describe).filter(Boolean);
-      if (fields.length > 200) throw new Error('Templates may contain at most 200 fields.');
+      if (fields.length > maxFields) throw new Error(`Templates may contain at most ${maxFields} fields.`);
       return JSON.stringify(fields);
     },
 
@@ -154,7 +169,7 @@
       const form = doc.getForm();
       const fields = JSON.parse(fieldsJson);
       const values = JSON.parse(valuesJson);
-      if (!fields.length || fields.length > 200) throw new Error('Configure between 1 and 200 fields.');
+      if (!fields.length || fields.length > maxFields) throw new Error(`Configure between 1 and ${maxFields} fields.`);
       const names = new Set();
       const font = await getFont(doc);
       const supportedCharacters = new Set(font.getCharacterSet());
@@ -193,8 +208,6 @@
             width: width * box.width, height: height * box.height,
             borderWidth: 0, backgroundColor: undefined, font,
           });
-          field.setFontSize(0);
-          if (config.multiline) field.enableMultiline();
         } else {
           field = form.getField(config.name);
         }
@@ -207,7 +220,7 @@
             throw new Error(`${config.label} contains a character this PDF font cannot display.`);
           }
           config.multiline ? field.enableMultiline() : field.disableMultiline();
-          field.setFontSize(0);
+          autoSizeText(field);
           field.setText(text);
         } else if (field instanceof library().PDFCheckBox) {
           value === true ? field.check() : field.uncheck();
@@ -220,6 +233,14 @@
         if (locked) lockValue(field);
       }
       form.updateFieldAppearances(font);
+      const { PDFName, PDFRef } = library();
+      const treeKey = PDFName.of('StructTreeRoot');
+      const structureTree = doc.catalog.get(treeKey);
+      if (structureTree instanceof PDFRef && !doc.context.lookup(structureTree)) {
+        // Some exports keep a dangling pointer to a deleted accessibility tree.
+        doc.catalog.delete(treeKey);
+        doc.catalog.delete(PDFName.of('MarkInfo'));
+      }
       return doc.save();
     },
   };

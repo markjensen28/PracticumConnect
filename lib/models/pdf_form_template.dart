@@ -1,3 +1,9 @@
+const maxPdfTemplateFields = 400;
+
+enum SchoolTemplateKind { moa, evaluation }
+
+typedef DefaultPdfTemplate = ({String path, String name});
+
 enum PdfFieldEntry {
   student,
   prefilled,

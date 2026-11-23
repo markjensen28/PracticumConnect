@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
 import '../models/cas_programs.dart';
+import '../models/pdf_form_template.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
+import 'pdf_template_widgets.dart';
 import 'workflow_shared.dart';
 import 'workspace_select_field.dart';
 
@@ -42,6 +44,16 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
     title: 'MOA Management',
     subtitle: 'Track partner agreements, expiration dates, and renewals.',
     actions: [
+      OutlinedButton.icon(
+        onPressed: () => showDefaultPdfTemplateSettings(
+          context,
+          repository: widget.repository,
+          actor: widget.user,
+          kind: SchoolTemplateKind.moa,
+        ),
+        icon: const Icon(Icons.description_outlined, size: 17),
+        label: const Text('Default PDF'),
+      ),
       OutlinedButton.icon(
         onPressed: () => _showPartnerManager(context),
         icon: const Icon(Icons.apartment_outlined, size: 15),
@@ -579,6 +591,15 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
         .watchPartnerInstitutions()
         .first;
     if (!context.mounted) return;
+    final defaultTemplate = existing == null
+        ? await loadDefaultPdfTemplate(
+            context,
+            widget.repository,
+            widget.user,
+            SchoolTemplateKind.moa,
+          )
+        : null;
+    if (!context.mounted) return;
     String? selectedPartnerId = existing?.partnerId;
     final partnerOptions = {
       '': 'Enter partner manually',
@@ -691,7 +712,8 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
             title: 'Agreement document',
             children: [
               FormField<PlatformFile>(
-                validator: (value) => existing == null && value == null
+                validator: (value) =>
+                    existing == null && value == null && defaultTemplate == null
                     ? 'Choose the MOA document.'
                     : null,
                 autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -714,9 +736,19 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
                       label: Text(
                         file?.name ??
                             existing?.fileName ??
-                            'Choose MOA document',
+                            (defaultTemplate == null
+                                ? 'Choose MOA document'
+                                : 'Default PDF · ${defaultTemplate.name}'),
                       ),
                     ),
+                    if (defaultTemplate != null && file != null)
+                      TextButton(
+                        onPressed: () {
+                          file = null;
+                          field.didChange(null);
+                        },
+                        child: const Text('Use default PDF'),
+                      ),
                     if (field.errorText case final error?)
                       Text(
                         error,
@@ -744,7 +776,8 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
             moaNumber: number.text,
             startDate: startDate,
             endDate: endDate,
-            file: file!,
+            file: file,
+            defaultTemplate: defaultTemplate,
             programs: programs.toList(),
             contactName: contactName.text,
             contactEmail: contactEmail.text,

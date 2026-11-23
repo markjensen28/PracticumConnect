@@ -51,6 +51,7 @@ async function makeTemplate() {
     hidden.acroField.dict.get(PDFName.of('V')),
   );
   const originalLock = form.getTextField('fixedSource');
+  form.getTextField('locked').acroField.setDefaultAppearance('0 g');
   originalLock.setText('Printed template information');
   originalLock.enableReadOnly();
   const checkbox = form.createCheckBox('approved');

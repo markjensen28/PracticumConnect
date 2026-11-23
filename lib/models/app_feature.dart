@@ -46,6 +46,7 @@ enum AppFeature {
       return switch (this) {
         AppFeature.dashboard => 'Coordinator Dashboard',
         AppFeature.students => 'Assigned Interns',
+        AppFeature.requirements => 'Requirement Setup',
         AppFeature.documentReview => 'Document Review',
         AppFeature.dtr => 'DTR & Hours',
         AppFeature.evaluations => 'Supervisor Evaluations',
@@ -83,6 +84,7 @@ class RoleAccess {
   static const coordinatorFeatures = <AppFeature>{
     AppFeature.dashboard,
     AppFeature.students,
+    AppFeature.requirements,
     AppFeature.documentReview,
     AppFeature.dtr,
     AppFeature.evaluations,
