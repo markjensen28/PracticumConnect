@@ -1296,6 +1296,15 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   String _query = '';
 
+  String _audienceLabel(String value) => switch (value) {
+    'all' => 'All users',
+    'student' => 'Student interns',
+    'coordinator' => 'Program coordinators',
+    'admin' => 'College coordinators',
+    _ when value.startsWith('user:') => 'Individual recipient',
+    _ => value,
+  };
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NotificationRecord>>(
     stream: widget.repository.watchNotificationManagement(widget.user),
@@ -1307,7 +1316,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       final records = all.where((item) {
         if (_query.isEmpty) return true;
         final haystack =
-            '${item.title} ${item.message} ${item.targetRole} ${item.priority}'
+            '${item.title} ${item.message} ${item.targetRole} ${_audienceLabel(item.targetRole)} ${item.priority}'
                 .toLowerCase();
         return haystack.contains(_query);
       }).toList();
@@ -1320,8 +1329,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       return WorkflowPage(
         title: 'Notification Management',
-        subtitle:
-            'Create, schedule, edit, deactivate, delete, and review delivery activity for internship notifications.',
+        subtitle: 'Manage announcements and see when they were sent or read.',
         eyebrow: 'Administration  ›  Notifications',
         actions: [
           FilledButton.icon(
@@ -1331,25 +1339,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ],
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                StatCard(
-                  label: 'Total Notifications',
-                  value: '${all.length}',
+            WorkspaceMetrics(
+              items: [
+                (
+                  label: 'Total notifications',
+                  value: all.length,
                   icon: Icons.notifications_outlined,
+                  color: AppTheme.blue,
                 ),
-                StatCard(
-                  label: 'Active / Sent',
-                  value: '$active',
+                (
+                  label: 'Active / sent',
+                  value: active,
                   icon: Icons.send_outlined,
+                  color: AppTheme.success,
                 ),
-                StatCard(
+                (
                   label: 'Scheduled',
-                  value: '$scheduled',
+                  value: scheduled,
                   icon: Icons.schedule_outlined,
+                  color: AppTheme.purple,
                 ),
               ],
             ),
@@ -1360,7 +1370,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 child: TextField(
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.search_rounded),
-                    hintText: 'Search title, message, audience, or priority',
+                    hintText: 'Search notifications',
                   ),
                   onChanged: (value) =>
                       setState(() => _query = value.trim().toLowerCase()),
@@ -1375,18 +1385,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       title: 'No notifications found',
                       message: 'Create a notification or adjust the search.',
                     )
-                  : ListView.separated(
-                      itemCount: records.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final item = records[index];
-                        final state = !item.active
-                            ? 'Inactive'
-                            : item.scheduledFor != null && !item.isDue
-                            ? 'Scheduled'
-                            : 'Sent';
-                        return Card(
-                          child: Padding(
+                  : Card(
+                      child: ListView.separated(
+                        itemCount: records.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final item = records[index];
+                          final state = !item.active
+                              ? 'Inactive'
+                              : item.scheduledFor != null && !item.isDue
+                              ? 'Scheduled'
+                              : 'Sent';
+                          return Padding(
                             padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1422,18 +1432,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                               fontWeight: FontWeight.w800,
                                             ),
                                           ),
-                                          Chip(
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            label: Text(state),
-                                          ),
-                                          Chip(
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            label: Text(
-                                              item.priority.toUpperCase(),
+                                          StatusBadge(state, compact: true),
+                                          if (item.priority.trim().isNotEmpty &&
+                                              item.priority.toLowerCase() !=
+                                                  'normal')
+                                            StatusBadge(
+                                              '${item.priority[0].toUpperCase()}${item.priority.substring(1)} priority',
+                                              compact: true,
                                             ),
-                                          ),
                                         ],
                                       ),
                                       const SizedBox(height: 5),
@@ -1447,7 +1453,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
-                                        'Audience: ${item.targetRole}  •  '
+                                        '${_audienceLabel(item.targetRole)}  •  '
                                         '${item.scheduledFor == null ? 'Created' : 'Scheduled'} '
                                         '${DateFormat.yMMMd().add_jm().format(item.scheduledFor ?? item.createdAt)}  •  '
                                         'Read by ${item.readBy.length}',
@@ -1497,9 +1503,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 ),
                               ],
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
             ),
           ],

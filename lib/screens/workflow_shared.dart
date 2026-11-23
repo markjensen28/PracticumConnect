@@ -474,6 +474,171 @@ class DashboardWelcome extends StatelessWidget {
   );
 }
 
+class WorkspaceMetrics extends StatelessWidget {
+  const WorkspaceMetrics({super.key, required this.items});
+
+  final List<({String label, int value, IconData icon, Color color})> items;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            items.length <= 2 ||
+                constraints.maxWidth >= (items.length == 4 ? 640 : 320)
+            ? items.length
+            : 2;
+        final compact = constraints.maxWidth / columns < 150;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var start = 0; start < items.length; start += columns) ...[
+              if (start > 0) const Divider(height: 1),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final (column, item)
+                        in items.skip(start).take(columns).indexed)
+                      Expanded(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: BorderDirectional(
+                              start: column == 0
+                                  ? BorderSide.none
+                                  : const BorderSide(color: AppTheme.border),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: compact ? 10 : 16,
+                              vertical: 12,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              spacing: 4,
+                              children: [
+                                Row(
+                                  spacing: 8,
+                                  children: [
+                                    Icon(
+                                      item.icon,
+                                      color: item.color,
+                                      size: 18,
+                                    ),
+                                    Flexible(
+                                      child: Text(
+                                        '${item.value}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleLarge,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  item.label,
+                                  style: const TextStyle(color: AppTheme.muted),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    for (
+                      var empty = items.length - start;
+                      empty < columns;
+                      empty++
+                    )
+                      const Spacer(),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class WorkspaceFilterBar extends StatelessWidget {
+  const WorkspaceFilterBar({
+    super.key,
+    required this.search,
+    required this.fields,
+    required this.onReset,
+    required this.canReset,
+    this.inlineAction,
+  });
+
+  final Widget search;
+  final List<Widget> fields;
+  final VoidCallback onReset;
+  final bool canReset;
+  final Widget? inlineAction;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(10),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          spacing: 10,
+          children: [
+            Expanded(flex: 3, child: search),
+            if (constraints.maxWidth >= 730) ...[
+              for (final field in fields) Expanded(flex: 2, child: field),
+              if (inlineAction case final action?) action,
+              TextButton.icon(
+                onPressed: canReset ? onReset : null,
+                icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                label: const Text('Reset'),
+              ),
+            ] else
+              OutlinedButton.icon(
+                onPressed: () => _showFilters(context),
+                icon: const Icon(Icons.tune_rounded, size: 17),
+                label: const Text('Filters'),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  void _showFilters(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Filters'),
+        scrollable: true,
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: fields,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              onReset();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Reset'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class WorkspaceTabs extends StatelessWidget {
   const WorkspaceTabs({
     super.key,

@@ -398,7 +398,7 @@ class MoaScreen extends StatelessWidget {
   }
 }
 
-class PeopleScreen extends StatelessWidget {
+class PeopleScreen extends StatefulWidget {
   const PeopleScreen({
     super.key,
     required this.user,
@@ -411,17 +411,51 @@ class PeopleScreen extends StatelessWidget {
   final bool studentsOnly;
 
   @override
+  State<PeopleScreen> createState() => _PeopleScreenState();
+}
+
+class _PeopleScreenState extends State<PeopleScreen> {
+  String _query = '';
+  late Stream<List<AppUser>> _users;
+
+  AppUser get user => widget.user;
+  PracticumRepository get repository => widget.repository;
+  bool get studentsOnly => widget.studentsOnly;
+
+  void _subscribe() {
+    _users = repository.watchUsers(
+      role: studentsOnly ? UserRole.student : null,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(covariant PeopleScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != repository ||
+        oldWidget.studentsOnly != studentsOnly) {
+      _query = '';
+      _subscribe();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => _ModulePage(
-    title: studentsOnly ? 'Student list' : 'User management',
+    title: studentsOnly ? 'Student list' : 'Users & Access',
     subtitle: studentsOnly
         ? 'Live student profiles registered in Firebase.'
         : 'Review coordinator registrations and manage active school accounts.',
     child: StreamBuilder<List<AppUser>>(
-      stream: repository.watchUsers(
-        role: studentsOnly ? UserRole.student : null,
-      ),
+      stream: _users,
       builder: (context, snapshot) {
         if (snapshot.hasError) return _Error(error: snapshot.error!);
+        if (!snapshot.hasData)
+          return const Center(child: CircularProgressIndicator());
         final users = snapshot.data ?? const <AppUser>[];
         if (users.isEmpty) {
           return _Empty(
@@ -434,9 +468,15 @@ class PeopleScreen extends StatelessWidget {
         final pending = !studentsOnly && user.role == UserRole.admin
             ? users.where((item) => item.isPendingCoordinator).toList()
             : const <AppUser>[];
-        final visibleUsers = studentsOnly
+        final accounts = studentsOnly
             ? users
             : users.where((item) => !item.isPendingCoordinator).toList();
+        final visibleUsers = accounts.where((item) {
+          final searchable =
+              '${item.displayName} ${item.email} '
+              '${item.studentNumber ?? ''} ${item.staffId ?? ''} ${item.role.label}';
+          return searchable.toLowerCase().contains(_query);
+        }).toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -449,94 +489,75 @@ class PeopleScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
             ],
-            if (!studentsOnly)
-              Padding(
-                padding: const EdgeInsets.only(left: 2, bottom: 10),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Accounts',
-                      style: TextStyle(
-                        color: AppTheme.navy,
-                        fontSize: AppTheme.fontBody,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceBlue,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${visibleUsers.length}',
-                        style: const TextStyle(
-                          color: AppTheme.blue,
-                          fontSize: AppTheme.fontSmall,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             Expanded(
-              child: visibleUsers.isEmpty
-                  ? const _Empty(
-                      icon: Icons.manage_accounts_outlined,
-                      title: 'No approved accounts yet',
-                      message:
-                          'Pending coordinator requests can be reviewed above.',
-                    )
-                  : ListView.separated(
-                      itemCount: visibleUsers.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final item = visibleUsers[index];
-                        return _AccountCard(
-                          item: item,
-                          studentsOnly: studentsOnly,
-                          currentUser: user,
-                          onAssignCoordinator: studentsOnly
-                              ? () => _assignCoordinator(context, item)
-                              : null,
-                          onUnassignCoordinator:
-                              studentsOnly && item.coordinatorId != null
-                              ? () => repository.assignStudent(
-                                  actor: user,
-                                  student: item,
-                                  coordinator: null,
-                                )
-                              : null,
-                          onActiveChanged:
-                              !studentsOnly &&
-                                  item.uid != user.uid &&
-                                  item.approvalStatus == 'approved'
-                              ? (active) async {
-                                  try {
-                                    await repository.setUserActive(
+              child: Builder(
+                builder: (context) {
+                  final rows = visibleUsers.isEmpty
+                      ? _Empty(
+                          icon: Icons.manage_accounts_outlined,
+                          title: _query.isEmpty
+                              ? 'No approved accounts yet'
+                              : 'No matching accounts',
+                          message: _query.isEmpty
+                              ? 'Review pending coordinator requests above.'
+                              : 'Search by name, email, role, or ID.',
+                        )
+                      : ListView.separated(
+                          itemCount: visibleUsers.length,
+                          separatorBuilder: (_, _) => studentsOnly
+                              ? const SizedBox(height: 10)
+                              : const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final item = visibleUsers[index];
+                            return _AccountCard(
+                              item: item,
+                              studentsOnly: studentsOnly,
+                              currentUser: user,
+                              onAssignCoordinator: studentsOnly
+                                  ? () => _assignCoordinator(context, item)
+                                  : null,
+                              onUnassignCoordinator:
+                                  studentsOnly && item.coordinatorId != null
+                                  ? () => repository.assignStudent(
                                       actor: user,
-                                      target: item,
-                                      active: active,
-                                    );
-                                  } catch (error) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text('$error')),
-                                      );
+                                      student: item,
+                                      coordinator: null,
+                                    )
+                                  : null,
+                              onActiveChanged:
+                                  !studentsOnly &&
+                                      item.uid != user.uid &&
+                                      item.approvalStatus == 'approved'
+                                  ? (active) async {
+                                      try {
+                                        await repository.setUserActive(
+                                          actor: user,
+                                          target: item,
+                                          active: active,
+                                        );
+                                      } catch (error) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(content: Text('$error')),
+                                          );
+                                        }
+                                      }
                                     }
-                                  }
-                                }
-                              : null,
+                                  : null,
+                            );
+                          },
                         );
-                      },
-                    ),
+                  if (studentsOnly) return rows;
+                  return _AccountsPanel(
+                    count: visibleUsers.length,
+                    onQuery: (value) =>
+                        setState(() => _query = value.trim().toLowerCase()),
+                    child: rows,
+                  );
+                },
+              ),
             ),
           ],
         );
@@ -824,6 +845,86 @@ class _CoordinatorRequestPanel extends StatelessWidget {
   }
 }
 
+class _AccountsPanel extends StatelessWidget {
+  const _AccountsPanel({
+    required this.count,
+    required this.onQuery,
+    required this.child,
+  });
+
+  static const _desktopWidth = 650.0;
+  static const _roleWidth = 250.0;
+  static const _accessWidth = 142.0;
+
+  final int count;
+  final ValueChanged<String> onQuery;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= _desktopWidth;
+        final countLabel = Text(
+          '$count ${count == 1 ? 'account' : 'accounts'}',
+          style: Theme.of(context).textTheme.titleMedium,
+        );
+        final search = TextField(
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded, size: 19),
+            hintText: 'Search accounts',
+          ),
+          onChanged: onQuery,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: wide
+                  ? Row(
+                      spacing: 12,
+                      children: [
+                        Expanded(child: countLabel),
+                        SizedBox(width: 340, child: search),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 8,
+                      children: [countLabel, search],
+                    ),
+            ),
+            const Divider(height: 1),
+            if (wide)
+              const ColoredBox(
+                color: AppTheme.surfaceSoft,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: DefaultTextStyle(
+                    style: TextStyle(
+                      color: AppTheme.muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    child: Row(
+                      spacing: 12,
+                      children: [
+                        Expanded(child: Text('Account')),
+                        SizedBox(width: _roleWidth, child: Text('Role')),
+                        SizedBox(width: _accessWidth, child: Text('Access')),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(child: child),
+          ],
+        );
+      },
+    ),
+  );
+}
+
 class _AccountCard extends StatelessWidget {
   const _AccountCard({
     required this.item,
@@ -842,146 +943,197 @@ class _AccountCard extends StatelessWidget {
   final ValueChanged<bool>? onActiveChanged;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 620;
-          final identity = Row(
-            children: [
-              CircleAvatar(
-                child: Text(
-                  item.displayName.isEmpty
-                      ? '?'
-                      : item.displayName[0].toUpperCase(),
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.displayName,
-                      style: const TextStyle(
-                        color: AppTheme.navy,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      item.email,
-                      style: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: AppTheme.fontSmall,
-                      ),
-                    ),
-                    if (item.studentNumber != null)
-                      Text(
-                        'Student no. ${item.studentNumber}',
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: AppTheme.fontSmall,
-                        ),
-                      ),
-                    if (!studentsOnly && item.staffId != null)
-                      Text(
-                        'Staff ID ${item.staffId} • ${item.department ?? 'No department'}',
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: AppTheme.fontSmall,
-                        ),
-                      ),
-                    if (studentsOnly)
-                      Text(
-                        'Coordinator: ${item.coordinatorName ?? 'Unassigned'}',
-                        style: const TextStyle(
-                          color: AppTheme.muted,
-                          fontSize: AppTheme.fontSmall,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          );
-
-          final controls = studentsOnly
-              ? Wrap(
-                  spacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _AccountStatusChip(item: item),
-                    PopupMenuButton<String>(
-                      tooltip: 'Coordinator assignment',
-                      onSelected: (value) async {
-                        if (value == 'assign') {
-                          onAssignCoordinator?.call();
-                        } else {
-                          onUnassignCoordinator?.call();
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'assign',
-                          child: Text(
-                            currentUser.role == UserRole.coordinator
-                                ? 'Assign to me'
-                                : 'Assign coordinator',
-                          ),
-                        ),
-                        if (item.coordinatorId != null)
-                          const PopupMenuItem(
-                            value: 'unassign',
-                            child: Text('Remove assignment'),
-                          ),
-                      ],
-                    ),
-                  ],
-                )
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _AccountStatusChip(item: item),
-                    const SizedBox(width: 10),
-                    Switch(value: item.active, onChanged: onActiveChanged),
-                  ],
-                );
-
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                identity,
-                const SizedBox(height: 12),
-                Align(alignment: Alignment.centerRight, child: controls),
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: identity),
-              const SizedBox(width: 16),
-              controls,
-            ],
-          );
-        },
-      ),
-    ),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final content = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: _row(
+          context,
+          compact: constraints.maxWidth < _AccountsPanel._desktopWidth,
+        ),
+      );
+      return studentsOnly ? Card(child: content) : content;
+    },
   );
+
+  Widget _row(BuildContext context, {required bool compact}) {
+    final identity = Row(
+      children: [
+        CircleAvatar(
+          child: Text(
+            item.displayName.isEmpty ? '?' : item.displayName[0].toUpperCase(),
+          ),
+        ),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.uid == currentUser.uid
+                    ? '${item.displayName} (you)'
+                    : item.displayName,
+                style: const TextStyle(
+                  color: AppTheme.navy,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                item.email,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: AppTheme.fontSmall,
+                ),
+              ),
+              if (item.studentNumber != null)
+                Text(
+                  'Student no. ${item.studentNumber}',
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
+                ),
+              if (!studentsOnly && item.staffId != null)
+                Text(
+                  'Staff ID ${item.staffId} • ${item.department ?? 'No department'}',
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
+                ),
+              if (studentsOnly)
+                Text(
+                  'Coordinator: ${item.coordinatorName ?? 'Unassigned'}',
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (!studentsOnly) {
+      final role = Align(
+        alignment: Alignment.centerLeft,
+        child: _AccountStatusChip(item: item, roleOnly: true),
+      );
+      final access = Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text(
+              item.isRejectedCoordinator
+                  ? 'Rejected'
+                  : item.active
+                  ? 'Active'
+                  : 'Inactive',
+              style: const TextStyle(color: AppTheme.muted),
+            ),
+          ),
+          Semantics(
+            label: 'Account access for ${item.displayName}',
+            child: Switch(value: item.active, onChanged: onActiveChanged),
+          ),
+        ],
+      );
+      final accessControl = SizedBox(
+        width: compact ? 124 : _AccountsPanel._accessWidth,
+        child: access,
+      );
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 8,
+          children: [
+            identity,
+            Row(
+              spacing: 8,
+              children: [
+                Expanded(child: role),
+                accessControl,
+              ],
+            ),
+          ],
+        );
+      }
+      return Row(
+        spacing: 12,
+        children: [
+          Expanded(child: identity),
+          SizedBox(width: _AccountsPanel._roleWidth, child: role),
+          accessControl,
+        ],
+      );
+    }
+
+    final controls = Wrap(
+      spacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _AccountStatusChip(item: item),
+        PopupMenuButton<String>(
+          tooltip: 'Coordinator assignment',
+          onSelected: (value) async {
+            if (value == 'assign') {
+              onAssignCoordinator?.call();
+            } else {
+              onUnassignCoordinator?.call();
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'assign',
+              child: Text(
+                currentUser.role == UserRole.coordinator
+                    ? 'Assign to me'
+                    : 'Assign coordinator',
+              ),
+            ),
+            if (item.coordinatorId != null)
+              const PopupMenuItem(
+                value: 'unassign',
+                child: Text('Remove assignment'),
+              ),
+          ],
+        ),
+      ],
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          identity,
+          const SizedBox(height: 12),
+          Align(alignment: Alignment.centerRight, child: controls),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: identity),
+        const SizedBox(width: 16),
+        controls,
+      ],
+    );
+  }
 }
 
 class _AccountStatusChip extends StatelessWidget {
-  const _AccountStatusChip({required this.item});
+  const _AccountStatusChip({required this.item, this.roleOnly = false});
 
   final AppUser item;
+  final bool roleOnly;
 
   @override
   Widget build(BuildContext context) {
-    final (label, color, icon) = item.isRejectedCoordinator
+    final (label, color, icon) = !roleOnly && item.isRejectedCoordinator
         ? ('Rejected', AppTheme.danger, Icons.cancel_outlined)
-        : !item.active
+        : !roleOnly && !item.active
         ? ('Inactive', AppTheme.muted, Icons.pause_circle_outline)
         : item.role == UserRole.coordinator
         ? (
@@ -991,14 +1143,39 @@ class _AccountStatusChip extends StatelessWidget {
           )
         : item.role == UserRole.admin
         ? (
-            'CAS College Coordinator / SIP Admin',
+            'College Coordinator',
             AppTheme.blue,
             Icons.admin_panel_settings_outlined,
           )
         : ('Student', AppTheme.blue, Icons.school_outlined);
+    if (roleOnly) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          border: Border.all(color: color.withValues(alpha: .18)),
+          borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 6,
+            children: [
+              Icon(icon, size: 15, color: color),
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: AppTheme.fontCaption),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Chip(
       avatar: Icon(icon, size: 16, color: color),
-      label: Text(label),
+      label: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
       backgroundColor: color.withValues(alpha: .08),
       side: BorderSide(color: color.withValues(alpha: .18)),
     );

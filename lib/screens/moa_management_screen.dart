@@ -6,6 +6,7 @@ import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class MoaManagementScreen extends StatefulWidget {
   const MoaManagementScreen({
@@ -21,6 +22,7 @@ class MoaManagementScreen extends StatefulWidget {
 }
 
 class _MoaManagementScreenState extends State<MoaManagementScreen> {
+  final _search = TextEditingController();
   String _query = '';
   String _status = 'All MOAs';
   String _program = 'All Programs';
@@ -29,10 +31,15 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
   int _tab = 0;
 
   @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'MOA Management',
-    subtitle:
-        'Manage, monitor, and track Memorandum of Agreements with partner institutions.',
+    subtitle: 'Track partner agreements, expiration dates, and renewals.',
     actions: [
       OutlinedButton.icon(
         onPressed: () => _showPartnerManager(context),
@@ -48,6 +55,14 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
     child: StreamBuilder<List<MoaRecord>>(
       stream: widget.repository.watchMoas(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text('Could not load partner agreements.'),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
         final all = snapshot.data ?? const <MoaRecord>[];
         final tabStatus = switch (_tab) {
           1 => 'Active',
@@ -124,166 +139,146 @@ class _MoaManagementScreenState extends State<MoaManagementScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(9),
-                child: Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    SizedBox(
-                      width: 280,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search, size: 18),
-                          hintText:
-                              'Search institution, reference no., or contact person…',
-                        ),
-                        onChanged: (value) =>
-                            setState(() => _query = value.toLowerCase()),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 170,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: effectiveProgram,
-                        decoration: const InputDecoration(labelText: 'Program'),
-                        items: programs
-                            .map(
-                              (value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(
-                                  value,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => _program = value ?? 'All Programs'),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 165,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: _status,
-                        decoration: const InputDecoration(labelText: 'Status'),
-                        items:
-                            const [
-                                  'All MOAs',
-                                  'Active',
-                                  'Nearing expiration',
-                                  'Expired',
-                                  'For renewal',
-                                ]
-                                .map(
-                                  (value) => DropdownMenuItem(
-                                    value: value,
-                                    child: Text(value),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (value) =>
-                            setState(() => _status = value ?? 'All MOAs'),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 170,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: _expiryFilter,
-                        decoration: const InputDecoration(
-                          labelText: 'Expiration',
-                        ),
-                        items:
-                            const [
-                                  'Any Date',
-                                  'Within 30 days',
-                                  'Within 90 days',
-                                  'Beyond 90 days',
-                                  'Expired',
-                                ]
-                                .map(
-                                  (value) => DropdownMenuItem(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (value) =>
-                            setState(() => _expiryFilter = value ?? 'Any Date'),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => setState(() {
-                        _query = '';
-                        _status = 'All MOAs';
-                        _program = 'All Programs';
-                        _expiryFilter = 'Any Date';
-                        _tab = 0;
-                      }),
-                      icon: const Icon(Icons.restart_alt_rounded, size: 16),
-                      label: const Text('Reset Filters'),
-                    ),
-                  ],
+            WorkspaceFilterBar(
+              search: TextField(
+                controller: _search,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search_rounded, size: 19),
+                  hintText: 'Search agreements',
                 ),
+                onChanged: (value) =>
+                    setState(() => _query = value.trim().toLowerCase()),
               ),
+              fields: [
+                WorkspaceSelectField(
+                  key: ValueKey('moa-program-$effectiveProgram'),
+                  label: 'Program',
+                  initialValue: effectiveProgram,
+                  options: programs,
+                  onChanged: (value) => setState(() => _program = value),
+                ),
+                WorkspaceSelectField(
+                  key: ValueKey('moa-status-$_status'),
+                  label: 'Status',
+                  initialValue: _status,
+                  options: const [
+                    'All MOAs',
+                    'Active',
+                    'Nearing expiration',
+                    'Expired',
+                    'For renewal',
+                  ],
+                  onChanged: (value) => setState(() => _status = value),
+                ),
+                WorkspaceSelectField(
+                  key: ValueKey('moa-expiration-$_expiryFilter'),
+                  label: 'Expiration',
+                  initialValue: _expiryFilter,
+                  options: const [
+                    'Any Date',
+                    'Within 30 days',
+                    'Within 90 days',
+                    'Beyond 90 days',
+                    'Expired',
+                  ],
+                  onChanged: (value) => setState(() => _expiryFilter = value),
+                ),
+              ],
+              canReset:
+                  _query.isNotEmpty ||
+                  _program != 'All Programs' ||
+                  _status != 'All MOAs' ||
+                  _expiryFilter != 'Any Date' ||
+                  _tab != 0,
+              onReset: () => setState(() {
+                _search.clear();
+                _query = '';
+                _status = 'All MOAs';
+                _program = 'All Programs';
+                _expiryFilter = 'Any Date';
+                _tab = 0;
+              }),
             ),
+
             const SizedBox(height: 9),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  if (records.isEmpty) {
+                    return Card(
+                      child: Center(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              EmptyWorkflowState(
+                                icon: Icons.handshake_outlined,
+                                title: all.isEmpty
+                                    ? 'No agreements yet'
+                                    : 'No matching agreements',
+                                message: all.isEmpty
+                                    ? 'Add an MOA to track its dates and renewal.'
+                                    : 'Try another status tab or adjust the filters.',
+                              ),
+                              if (all.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _showMoaDialog(context),
+                                    icon: const Icon(Icons.add, size: 17),
+                                    label: const Text('Add first agreement'),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final narrow = constraints.maxWidth < 925;
+                  Widget details(MoaRecord record) => _MoaDetails(
+                    key: ValueKey(record.id),
+                    record: record,
+                    repository: widget.repository,
+                    onEdit: () => _showMoaDialog(context, existing: record),
+                    onRenew: () => _renew(context, record),
+                    onDelete: () => _delete(context, record),
+                  );
                   final list = _MoaList(
                     records: records,
-                    selected: selected,
-                    onSelect: (record) => setState(() => _selected = record),
+                    selected: narrow ? null : selected,
+                    onSelect: (record) {
+                      setState(() => _selected = record);
+                      if (narrow) {
+                        showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          useSafeArea: true,
+                          showDragHandle: true,
+                          builder: (_) => FractionallySizedBox(
+                            heightFactor: .82,
+                            child: SingleChildScrollView(
+                              child: details(record),
+                            ),
+                          ),
+                        );
+                      }
+                    },
                     onEdit: (record) =>
                         _showMoaDialog(context, existing: record),
                     onRenew: (record) => _renew(context, record),
                     onDelete: (record) => _delete(context, record),
                     repository: widget.repository,
                   );
-                  final detail = selected == null
-                      ? const EmptyWorkflowState(
-                          icon: Icons.handshake_outlined,
-                          title: 'No MOA selected',
-                          message: 'Select an agreement to view details.',
-                        )
-                      : _MoaDetails(
-                          record: selected,
-                          repository: widget.repository,
-                          onEdit: () =>
-                              _showMoaDialog(context, existing: selected),
-                          onRenew: () => _renew(context, selected),
-                          onDelete: () => _delete(context, selected),
-                        );
-                  if (constraints.maxWidth < 980) {
-                    return Column(
-                      children: [
-                        Expanded(child: list),
-                        const SizedBox(height: 9),
-                        SizedBox(
-                          height: 450,
-                          child: SingleChildScrollView(child: detail),
-                        ),
-                      ],
-                    );
-                  }
+                  if (narrow) return list;
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 12,
                     children: [
                       Expanded(flex: 7, child: list),
-                      const SizedBox(width: 10),
                       SizedBox(
                         width: 320,
-                        child: SingleChildScrollView(child: detail),
+                        child: SingleChildScrollView(child: details(selected!)),
                       ),
                     ],
                   );
@@ -1020,52 +1015,36 @@ class _MoaStats extends StatelessWidget {
   final List<MoaRecord> records;
 
   @override
-  Widget build(BuildContext context) {
-    final cards = [
-      StatCard(
+  Widget build(BuildContext context) => WorkspaceMetrics(
+    items: [
+      (
         label: 'Total MOAs',
-        value: '${records.length}',
+        value: records.length,
         icon: Icons.handshake_outlined,
         color: AppTheme.blue,
       ),
-      StatCard(
+      (
         label: 'Active MOAs',
-        value: '${records.where((item) => item.status == 'Active').length}',
+        value: records.where((item) => item.status == 'Active').length,
         icon: Icons.verified_outlined,
         color: AppTheme.success,
       ),
-      StatCard(
-        label: 'Nearing Expiration',
-        value:
-            '${records.where((item) => item.status == 'Nearing expiration').length}',
-        caption: 'within 3 months',
+      (
+        label: 'Expiring within 3 months',
+        value: records
+            .where((item) => item.status == 'Nearing expiration')
+            .length,
         icon: Icons.warning_amber_outlined,
         color: AppTheme.warning,
       ),
-      StatCard(
+      (
         label: 'Expired',
-        value: '${records.where((item) => item.status == 'Expired').length}',
+        value: records.where((item) => item.status == 'Expired').length,
         icon: Icons.event_busy_outlined,
         color: AppTheme.danger,
       ),
-    ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 900
-            ? (constraints.maxWidth - 30) / 4
-            : constraints.maxWidth >= 560
-            ? (constraints.maxWidth - 10) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: cards
-              .map((card) => SizedBox(width: width, child: card))
-              .toList(),
-        );
-      },
-    );
-  }
+    ],
+  );
 }
 
 class _MoaList extends StatelessWidget {
@@ -1089,202 +1068,178 @@ class _MoaList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    child: records.isEmpty
-        ? const EmptyWorkflowState(
-            icon: Icons.handshake_outlined,
-            title: 'No MOAs found',
-            message: 'Create the first partner agreement.',
-          )
-        : Column(
-            children: [
-              Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 575;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Row(
+                spacing: 12,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Agreements',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  Text(
+                    '${records.length} ${records.length == 1 ? 'agreement' : 'agreements'}',
+                    style: const TextStyle(color: AppTheme.muted),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            if (!compact) ...[
+              const ColoredBox(
                 color: AppTheme.surfaceSoft,
-                child: const Row(
-                  children: [
-                    SizedBox(width: 28),
-                    Expanded(flex: 3, child: Text('Institution', style: _head)),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Reference No.', style: _head),
-                    ),
-                    Expanded(flex: 2, child: Text('Program/s', style: _head)),
-                    Expanded(flex: 2, child: Text('Date Signed', style: _head)),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Expiration Date', style: _head),
-                    ),
-                    Expanded(flex: 2, child: Text('Status', style: _head)),
-                    SizedBox(width: 34),
-                  ],
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    spacing: 12,
+                    children: [
+                      Expanded(child: Text('Institution', style: _head)),
+                      SizedBox(width: 116, child: Text('Signed', style: _head)),
+                      SizedBox(
+                        width: 116,
+                        child: Text('Expires', style: _head),
+                      ),
+                      SizedBox(width: 130, child: Text('Status', style: _head)),
+                      SizedBox(width: 40),
+                    ],
+                  ),
                 ),
               ),
               const Divider(height: 1),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: records.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final record = records[index];
-                    final active = selected?.id == record.id;
-                    return InkWell(
-                      onTap: () => onSelect(record),
-                      child: Container(
-                        color: active ? AppTheme.surfaceBlue : Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 28,
-                              child: Icon(
-                                active
-                                    ? Icons.check_box
-                                    : Icons.check_box_outline_blank,
-                                size: 14,
-                                color: active ? AppTheme.blue : AppTheme.muted,
-                              ),
-                            ),
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                record.partnerName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: AppTheme.fontCaption,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            Expanded(flex: 2, child: _cell(record.moaNumber)),
-                            Expanded(
-                              flex: 2,
-                              child: _cell(
-                                record.programs.isEmpty
-                                    ? 'All'
-                                    : record.programs.join(', '),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: _cell(shortDate(record.startDate)),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: _cell(shortDate(record.endDate)),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: StatusBadge(
-                                  record.status,
-                                  compact: true,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 34,
-                              child: PopupMenuButton<String>(
-                                padding: EdgeInsets.zero,
-                                icon: const Icon(Icons.more_horiz, size: 16),
-                                onSelected: (value) {
-                                  switch (value) {
-                                    case 'edit':
-                                      onEdit(record);
-                                      break;
-                                    case 'view':
-                                      openStorageDocument(
-                                        context,
-                                        repository,
-                                        record.storagePath,
-                                      );
-                                      break;
-                                    case 'renew':
-                                      onRenew(record);
-                                      break;
-                                    case 'delete':
-                                      onDelete(record);
-                                      break;
-                                  }
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                    value: 'edit',
-                                    child: Text('Edit MOA'),
+            ],
+            Expanded(
+              child: ListView.separated(
+                itemCount: records.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final record = records[index];
+                  final active = selected?.id == record.id;
+                  final status = StatusBadge(record.status, compact: true);
+                  return InkWell(
+                    onTap: () => onSelect(record),
+                    child: Ink(
+                      color: active ? AppTheme.surfaceBlue : AppTheme.surface,
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                      child: Row(
+                        spacing: 12,
+                        children: [
+                          Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: active,
+                              onTap: () => onSelect(record),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                spacing: 4,
+                                children: [
+                                  Text(
+                                    record.partnerName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                  PopupMenuItem(
-                                    value: 'view',
-                                    child: Text('View Documents'),
+                                  Text(
+                                    compact
+                                        ? '${record.moaNumber} • Expires ${shortDate(record.endDate)}'
+                                        : record.moaNumber,
+                                    style: const TextStyle(
+                                      color: AppTheme.muted,
+                                    ),
                                   ),
-                                  PopupMenuItem(
-                                    value: 'renew',
-                                    child: Text('Update / Renew'),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('Delete'),
-                                  ),
+                                  if (compact) status,
                                 ],
                               ),
                             ),
+                          ),
+                          if (!compact) ...[
+                            SizedBox(
+                              width: 116,
+                              child: Text(shortDate(record.startDate)),
+                            ),
+                            SizedBox(
+                              width: 116,
+                              child: Text(shortDate(record.endDate)),
+                            ),
+                            SizedBox(
+                              width: 130,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: status,
+                              ),
+                            ),
                           ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: AppTheme.border)),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      '${records.length} of ${records.length} selected',
-                      style: const TextStyle(
-                        fontSize: AppTheme.fontCaption,
-                        color: AppTheme.muted,
+                          SizedBox(
+                            width: 40,
+                            child: PopupMenuButton<String>(
+                              tooltip: 'Agreement actions',
+                              padding: EdgeInsets.zero,
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'edit':
+                                    onEdit(record);
+                                  case 'view':
+                                    openStorageDocument(
+                                      context,
+                                      repository,
+                                      record.storagePath,
+                                    );
+                                  case 'renew':
+                                    onRenew(record);
+                                  case 'delete':
+                                    onDelete(record);
+                                }
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'edit',
+                                  child: Text('Edit MOA'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'view',
+                                  child: Text('View documents'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'renew',
+                                  child: Text('Update / Renew'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Delete'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const Spacer(),
-                    const Text(
-                      '10 / page',
-                      style: TextStyle(
-                        fontSize: AppTheme.fontCaption,
-                        color: AppTheme.muted,
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
+        );
+      },
+    ),
   );
 
-  static const TextStyle _head = TextStyle(
+  static const _head = TextStyle(
     fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
-  );
-
-  Widget _cell(String value) => Text(
-    value,
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-    style: const TextStyle(fontSize: AppTheme.fontCaption),
   );
 }
 
 class _MoaDetails extends StatefulWidget {
   const _MoaDetails({
+    super.key,
     required this.record,
     required this.repository,
     required this.onEdit,
@@ -1316,16 +1271,13 @@ class _MoaDetailsState extends State<_MoaDetails> {
   @override
   Widget build(BuildContext context) => SectionCard(
     title: widget.record.partnerName,
-    trailing: StatusBadge(widget.record.status, compact: true),
+    subtitle: widget.record.moaNumber,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          widget.record.moaNumber,
-          style: const TextStyle(
-            fontSize: AppTheme.fontCaption,
-            color: AppTheme.muted,
-          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: StatusBadge(widget.record.status, compact: true),
         ),
         const SizedBox(height: 7),
         WorkspaceTabs(

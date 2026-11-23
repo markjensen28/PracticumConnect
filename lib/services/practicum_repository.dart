@@ -13,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/app_config.dart';
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 import '../models/records.dart';
 import '../models/workflow_models.dart';
 import '../models/pdf_form_template.dart';
@@ -1160,7 +1161,6 @@ class PracticumRepository {
     required AppUser actor,
     required AppUser student,
     required String program,
-    String? academicDepartment,
     String? section,
     required String yearLevel,
     required String academicYear,
@@ -1169,6 +1169,16 @@ class PracticumRepository {
     if (!actor.role.isStaff) {
       throw StateError(
         'Student interns cannot update internship placement records.',
+      );
+    }
+    final selectedProgram = canonicalCasProgram(program);
+    if (selectedProgram == null) {
+      throw ArgumentError('Select one of the four CAS programs.');
+    }
+    final selectedYearLevel = canonicalCasYearLevel(yearLevel);
+    if (selectedYearLevel == null) {
+      throw ArgumentError(
+        'Select a year level from 1st Year through 4th Year.',
       );
     }
     await _assertCanManageStudent(actor, student.uid);
@@ -1226,10 +1236,10 @@ class PracticumRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     };
     final userChanges = <String, dynamic>{
-      'program': program.trim(),
-      if (academicDepartment != null) 'department': academicDepartment.trim(),
+      'program': selectedProgram,
+      'department': casCollegeName,
       if (section != null) 'section': section.trim(),
-      'yearLevel': yearLevel.trim(),
+      'yearLevel': selectedYearLevel,
       'academicYear': academicYear.trim(),
       if (actor.role == UserRole.admin) 'coordinatorId': coordinatorId,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -1404,6 +1414,14 @@ class PracticumRepository {
     if (title.trim().isEmpty || category.trim().isEmpty) {
       throw ArgumentError('Requirement title and category are required.');
     }
+    final requestedProgram = program.trim();
+    final targetProgram =
+        requestedProgram.isEmpty || requestedProgram == 'All Programs'
+        ? 'All Programs'
+        : canonicalCasProgram(requestedProgram);
+    if (targetProgram == null) {
+      throw ArgumentError('Select a CAS program or All Programs.');
+    }
     final reference = id == null
         ? _db.collection('requirement_definitions').doc()
         : _db.collection('requirement_definitions').doc(id);
@@ -1413,7 +1431,7 @@ class PracticumRepository {
       'instructions': instructions.trim(),
       'category': category.trim(),
       'dueDate': Timestamp.fromDate(dueDate),
-      'program': program.trim().isEmpty ? 'All Programs' : program.trim(),
+      'program': targetProgram,
       'officialFormUrl': officialFormUrl?.trim(),
       'sampleFormUrl': sampleFormUrl?.trim(),
       'pdfTemplate': pdfTemplate?.toMap(),

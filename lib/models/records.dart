@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'cas_programs.dart';
+
 enum ReviewStatus { pending, underReview, verified, needsRevision, rejected }
 
 extension ReviewStatusLabel on ReviewStatus {
@@ -79,6 +81,7 @@ class RequirementRecord {
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data() ?? const <String, dynamic>{};
+    final program = data['program'] as String?;
     return RequirementRecord(
       id: doc.id,
       studentId: data['studentId'] as String? ?? '',
@@ -92,7 +95,7 @@ class RequirementRecord {
       remarks: data['remarks'] as String?,
       definitionId: data['definitionId'] as String?,
       category: data['category'] as String? ?? 'General',
-      program: data['program'] as String?,
+      program: canonicalCasProgram(program) ?? program,
       studentNumber: data['studentNumber'] as String?,
       institutionName: data['institutionName'] as String?,
       coordinatorId: data['coordinatorId'] as String?,

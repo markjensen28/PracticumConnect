@@ -4,6 +4,7 @@ import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { sendSchoolEmail, singleMailbox } from './school_email.mjs';
+import { programAppliesTo } from './cas_programs.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 
 function ensureAdminApp() {
@@ -80,14 +81,10 @@ async function syncCompletionStage(db, studentId, submittedAcademicYear) {
     return;
   }
 
-  const program = String(user.program || '').trim();
   const definitions = definitionsSnapshot.docs
     .map((doc) => ({ id: doc.id, ...doc.data() }))
     .filter((item) => item.active !== false)
-    .filter((item) => {
-      const target = String(item.program || 'All Programs').trim();
-      return !target || target === 'All Programs' || target === program;
-    });
+    .filter((item) => programAppliesTo(item.program, user.program));
   const completionDefinitions = definitions.filter(isCompletionDefinition);
   const requirements = requirementsSnapshot.docs
     .map((doc) => ({ id: doc.id, ...doc.data() }))

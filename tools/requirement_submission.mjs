@@ -3,6 +3,7 @@ import { validAcademicYear } from '../functions/attendance.mjs';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { ensureAdminApp } from './staff_claims_core.mjs';
+import { programAppliesTo } from './cas_programs.mjs';
 import { documentBucket, invalid, readStoredFile, checkPdf } from './private_files.mjs';
 
 export async function verifyRequirementFile(name, bytes) {
@@ -85,9 +86,7 @@ export async function finalizeRequirement({ authorization, body }) {
       if (
         !definition?.title?.trim() ||
         definition.active === false ||
-        (definition.program?.trim() &&
-          definition.program !== 'All Programs' &&
-          definition.program !== user.program)
+        !programAppliesTo(definition.program, user.program)
       ) {
         throw invalid('This requirement is unavailable for your program.');
       }

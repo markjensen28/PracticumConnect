@@ -43,24 +43,26 @@ class RepositoryFolder {
       final student = roster[uid];
       final files = byStudent[uid] ?? [];
       final latest = files.firstOrNull;
-      final department = label([
-        student?.department,
+      final program = label([
         student?.program,
         latest?.program,
-      ], 'Unassigned department');
+      ], 'Unassigned program');
       final section = label([student?.section], 'Unassigned section');
       final name = label([
         student?.displayName,
         latest?.studentName,
       ], 'Unnamed student');
       final number = label([student?.studentNumber, latest?.studentNumber], '');
-      final deptFolder = root._child(department.toLowerCase(), department);
-      final sectionFolder = deptFolder._child(section.toLowerCase(), section);
+      final programFolder = root._child(program.toLowerCase(), program);
+      final sectionFolder = programFolder._child(
+        section.toLowerCase(),
+        section,
+      );
       final studentFolder = sectionFolder._child(
         uid,
         number.isEmpty ? name : '$name · $number',
       );
-      for (final folder in [deptFolder, sectionFolder, studentFolder]) {
+      for (final folder in [programFolder, sectionFolder, studentFolder]) {
         folder.documents.addAll(files);
       }
       for (final file in files) {

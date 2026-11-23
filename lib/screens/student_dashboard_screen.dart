@@ -45,9 +45,7 @@ class StudentDashboardScreen extends StatelessWidget {
                 final definitions = definitionsSnapshot.data!
                     .where(
                       (item) =>
-                          item.active &&
-                          (item.program == 'All Programs' ||
-                              item.program == user.program),
+                          item.active && item.appliesToProgram(user.program),
                     )
                     .toList();
                 final records = [...snapshot.data!]

@@ -5,26 +5,13 @@ import 'package:intl/intl.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 import '../models/records.dart';
 import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import 'advanced_reports_screen.dart';
 import 'workflow_shared.dart';
-
-const _studentCollegeOptions = [
-  'College of Arts and Sciences',
-  'College of Engineering',
-  'College of Education',
-  'College of Nursing and Health Sciences',
-];
-
-const _studentYearLevelOptions = [
-  '1st Year',
-  '2nd Year',
-  '3rd Year',
-  '4th Year',
-  '5th Year',
-];
+import 'workspace_select_field.dart';
 
 class StudentDirectoryScreen extends StatefulWidget {
   const StudentDirectoryScreen({
@@ -542,17 +529,17 @@ class _AddStudentDialogState extends State<_AddStudentDialog> {
                 requiredMessage: 'Enter the student’s email address.',
                 email: true,
               ),
-              _field(
-                'program',
-                'Program',
-                capitalization: TextCapitalization.words,
+              const _CasCollegeField(),
+              WorkspaceSelectField(
+                label: 'Program *',
+                hint: 'Select a program',
+                options: casPrograms,
+                enabled: !_sending,
+                validator: (value) =>
+                    value == null ? 'Select a CAS program.' : null,
+                onSaved: (value) => _row['program'] = value!,
               ),
               _field('section', 'Section'),
-              _field(
-                'department',
-                'Department',
-                capitalization: TextCapitalization.words,
-              ),
               _field('academicYear', 'Academic year'),
               if (_error != null)
                 Semantics(
@@ -1019,27 +1006,9 @@ class _StudentInternshipProfileScreenState
     BuildContext context,
     InternshipProfileRecord profile,
   ) async {
-    final existingProgram = student.program?.trim() ?? '';
-    final programOptions = [
-      ..._studentCollegeOptions,
-      if (existingProgram.isNotEmpty &&
-          !_studentCollegeOptions.contains(existingProgram))
-        existingProgram,
-    ];
-    var selectedProgram = programOptions.contains(existingProgram)
-        ? existingProgram
-        : null;
+    var selectedProgram = canonicalCasProgram(student.program);
 
-    final existingYearLevel = student.yearLevel?.trim() ?? '';
-    final normalizedYearLevel = _normalizeYearLevel(existingYearLevel);
-    final yearLevelOptions = [
-      ..._studentYearLevelOptions,
-      if (existingYearLevel.isNotEmpty && normalizedYearLevel == null)
-        existingYearLevel,
-    ];
-    var selectedYearLevel =
-        normalizedYearLevel ??
-        (existingYearLevel.isNotEmpty ? existingYearLevel : null);
+    var selectedYearLevel = canonicalCasYearLevel(student.yearLevel);
 
     final storedAcademicYear = student.academicYear?.trim().isNotEmpty == true
         ? student.academicYear!.trim()
@@ -1049,7 +1018,6 @@ class _StudentInternshipProfileScreenState
           ? storedAcademicYear
           : _currentAcademicYear(DateTime.now()),
     );
-    final academicDepartment = TextEditingController(text: student.department);
     final section = TextEditingController(text: student.section);
     final profileFormKey = GlobalKey<FormState>();
     final company = TextEditingController(text: profile.companyName);
@@ -1078,145 +1046,190 @@ class _StudentInternshipProfileScreenState
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
           title: Text('Update ${student.displayName}'),
           content: SizedBox(
             width: 680,
             child: Form(
               key: profileFormKey,
               child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _dropdown(
-                      'Program / College',
-                      selectedProgram,
-                      programOptions,
-                      (value) => setDialogState(() => selectedProgram = value),
-                      width: 350,
-                      hint: 'Select a college',
-                      required: true,
-                    ),
-                    _dropdown(
-                      'Year level',
-                      selectedYearLevel,
-                      yearLevelOptions,
-                      (value) =>
-                          setDialogState(() => selectedYearLevel = value),
-                      hint: 'Select year level',
-                      required: true,
-                    ),
-                    _field(academicDepartment, 'Academic department'),
-                    _field(section, 'Class section'),
-                    _field(academicYear, 'Academic year'),
-                    SizedBox(
-                      width: 314,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'System internship stage',
-                          helperText:
-                              'Updated automatically from requirements, deployment, DTR hours, and evaluation.',
-                        ),
-                        child: Text(
-                          status,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                    _dropdown(
-                      'Placement status',
-                      placementStatus,
-                      const [
-                        'Unassigned',
-                        'Processing',
-                        'Confirmed',
-                        'Deployed',
-                      ],
-                      (value) => setDialogState(() => placementStatus = value),
-                    ),
-                    _field(company, 'Company / institution'),
-                    _field(department, 'Department'),
-                    _field(position, 'Position'),
-                    _field(requiredHours, 'Required hours', number: true),
-                    _dateButton(context, 'Start date', startDate, (value) {
-                      setDialogState(() => startDate = value);
-                    }),
-                    _dateButton(context, 'End date', endDate, (value) {
-                      setDialogState(() => endDate = value);
-                    }),
-                    _shiftTimeButton(
-                      context,
-                      'Shift starts',
-                      shiftStartMinutes,
-                      (value) =>
-                          setDialogState(() => shiftStartMinutes = value),
-                    ),
-                    _shiftTimeButton(
-                      context,
-                      'Shift ends',
-                      shiftEndMinutes,
-                      (value) => setDialogState(() => shiftEndMinutes = value),
-                    ),
-                    SizedBox(
-                      width: 640,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Scheduled work days',
-                          helperText:
-                              'Breaks are included in the shift for now.',
-                        ),
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            for (final day in const [
-                              (1, 'Mon'),
-                              (2, 'Tue'),
-                              (3, 'Wed'),
-                              (4, 'Thu'),
-                              (5, 'Fri'),
-                              (6, 'Sat'),
-                              (7, 'Sun'),
-                            ])
-                              FilterChip(
-                                label: Text(day.$2),
-                                selected: workDays.contains(day.$1),
-                                onSelected: (selected) => setDialogState(() {
-                                  if (selected) {
-                                    workDays.add(day.$1);
-                                  } else {
-                                    workDays.remove(day.$1);
-                                  }
-                                }),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    Widget pair(Widget first, Widget second) {
+                      if (constraints.maxWidth < 540) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          spacing: 12,
+                          children: [first, second],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 12,
+                        children: [
+                          Expanded(child: first),
+                          Expanded(child: second),
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 24,
+                      children: [
+                        _profileSection(context, 'Academic details', [
+                          WorkspaceSelectField(
+                            label: 'Program *',
+                            initialValue: selectedProgram,
+                            options: casPrograms,
+                            hint: 'Select a program',
+                            onChanged: (value) => selectedProgram = value,
+                            validator: (value) =>
+                                value == null ? 'Select a program.' : null,
+                          ),
+                          pair(
+                            const _CasCollegeField(),
+                            WorkspaceSelectField(
+                              label: 'Year level *',
+                              initialValue: selectedYearLevel,
+                              options: casYearLevels,
+                              hint: 'Select year level',
+                              onChanged: (value) => selectedYearLevel = value,
+                              validator: (value) =>
+                                  value == null ? 'Select a year level.' : null,
+                            ),
+                          ),
+                          pair(
+                            _field(section, 'Class section'),
+                            _field(academicYear, 'Academic year'),
+                          ),
+                        ]),
+                        _profileSection(context, 'Placement', [
+                          pair(
+                            InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Internship stage',
+                                enabled: false,
+                                fillColor: AppTheme.surfaceSoft,
+                                constraints: BoxConstraints(minHeight: 54),
                               ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 314,
-                      child: TextField(
-                        controller: timeZone,
-                        decoration: const InputDecoration(
-                          labelText: 'Time zone',
-                          helperText: 'IANA name, for example Asia/Manila',
-                        ),
-                      ),
-                    ),
-                    _field(supervisor, 'Supervisor name'),
-                    _field(supervisorEmail, 'Supervisor email'),
-                    _field(supervisorPhone, 'Supervisor phone'),
-                    SizedBox(
-                      width: 640,
-                      child: TextField(
-                        controller: remarks,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Coordinator remarks',
-                        ),
-                      ),
-                    ),
-                  ],
+                              child: Text(status),
+                            ),
+                            WorkspaceSelectField(
+                              label: 'Placement status',
+                              initialValue: placementStatus,
+                              options: const [
+                                'Unassigned',
+                                'Processing',
+                                'Confirmed',
+                                'Deployed',
+                              ],
+                              onChanged: (value) => placementStatus = value,
+                            ),
+                          ),
+                          _field(company, 'Company / institution'),
+                          pair(
+                            _field(department, 'Host department'),
+                            _field(position, 'Position'),
+                          ),
+                        ]),
+                        _profileSection(context, 'Work schedule', [
+                          pair(
+                            _dateButton(context, 'Start date', startDate, (
+                              value,
+                            ) {
+                              setDialogState(() => startDate = value);
+                            }),
+                            _dateButton(context, 'End date', endDate, (value) {
+                              setDialogState(() => endDate = value);
+                            }),
+                          ),
+                          pair(
+                            _shiftTimeButton(
+                              context,
+                              'Shift starts',
+                              shiftStartMinutes,
+                              (value) {
+                                setDialogState(() => shiftStartMinutes = value);
+                              },
+                            ),
+                            _shiftTimeButton(
+                              context,
+                              'Shift ends',
+                              shiftEndMinutes,
+                              (value) {
+                                setDialogState(() => shiftEndMinutes = value);
+                              },
+                            ),
+                          ),
+                          pair(
+                            _field(
+                              requiredHours,
+                              'Required hours',
+                              number: true,
+                            ),
+                            TextField(
+                              controller: timeZone,
+                              decoration: const InputDecoration(
+                                labelText: 'Time zone',
+                                helperText: 'For example, Asia/Manila',
+                              ),
+                            ),
+                          ),
+                          InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Scheduled work days',
+                              helperText: 'Shift hours include breaks.',
+                            ),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                for (final day in const [
+                                  (1, 'Mon'),
+                                  (2, 'Tue'),
+                                  (3, 'Wed'),
+                                  (4, 'Thu'),
+                                  (5, 'Fri'),
+                                  (6, 'Sat'),
+                                  (7, 'Sun'),
+                                ])
+                                  FilterChip(
+                                    label: Text(day.$2),
+                                    selected: workDays.contains(day.$1),
+                                    onSelected: (selected) =>
+                                        setDialogState(() {
+                                          if (selected) {
+                                            workDays.add(day.$1);
+                                          } else {
+                                            workDays.remove(day.$1);
+                                          }
+                                        }),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ]),
+                        _profileSection(context, 'Supervisor', [
+                          _field(supervisor, 'Supervisor name'),
+                          pair(
+                            _field(supervisorEmail, 'Supervisor email'),
+                            _field(supervisorPhone, 'Supervisor phone'),
+                          ),
+                          TextField(
+                            controller: remarks,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              labelText: 'Coordinator remarks',
+                            ),
+                          ),
+                        ]),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -1234,7 +1247,6 @@ class _StudentInternshipProfileScreenState
                   actor: actor,
                   student: student,
                   program: selectedProgram!,
-                  academicDepartment: academicDepartment.text,
                   section: section.text,
                   yearLevel: selectedYearLevel!,
                   academicYear: academicYear.text,
@@ -1272,7 +1284,6 @@ class _StudentInternshipProfileScreenState
     );
     for (final controller in [
       academicYear,
-      academicDepartment,
       section,
       company,
       department,
@@ -1292,84 +1303,31 @@ class _StudentInternshipProfileScreenState
     TextEditingController controller,
     String label, {
     bool number = false,
-  }) => SizedBox(
-    width: 310,
-    child: TextField(
-      controller: controller,
-      keyboardType: number ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(labelText: label),
-    ),
+  }) => TextField(
+    controller: controller,
+    keyboardType: number ? TextInputType.number : TextInputType.text,
+    decoration: InputDecoration(labelText: label),
   );
 
-  Widget _dropdown(
-    String label,
-    String? value,
-    List<String> values,
-    ValueChanged<String> onChanged, {
-    double width = 310,
-    String? hint,
-    bool required = false,
-  }) => SizedBox(
-    width: width,
-    child: FormField<String>(
-      initialValue: values.contains(value) ? value : null,
-      validator: required
-          ? (item) => item == null || item.isEmpty ? 'Select $label' : null
-          : null,
-      builder: (field) => DropdownMenu<String>(
-        width: width,
-        menuHeight: 260,
-        initialSelection: field.value,
-        label: Text(label),
-        hintText: hint,
-        errorText: field.errorText,
-        enableSearch: false,
-        selectOnly: true,
-        trailingIcon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
-        selectedTrailingIcon: const Icon(
-          Icons.keyboard_arrow_up_rounded,
-          size: 20,
-        ),
-        alignmentOffset: const Offset(0, 8),
-        menuStyle: MenuStyle(
-          alignment: AlignmentDirectional.bottomStart,
-          backgroundColor: const WidgetStatePropertyAll(AppTheme.surface),
-          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          elevation: const WidgetStatePropertyAll(5),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(vertical: 6),
-          ),
-          fixedSize: WidgetStatePropertyAll(Size.fromWidth(width)),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: AppTheme.border),
-            ),
-          ),
-        ),
-        dropdownMenuEntries: values
-            .map(
-              (item) => DropdownMenuEntry<String>(
-                value: item,
-                label: item,
-                trailingIcon: item == field.value
-                    ? const Icon(
-                        Icons.check_rounded,
-                        color: AppTheme.blue,
-                        size: 18,
-                      )
-                    : null,
-              ),
-            )
-            .toList(),
-        onSelected: (item) {
-          if (item != null) {
-            field.didChange(item);
-            onChanged(item);
-          }
-        },
+  Widget _profileSection(
+    BuildContext context,
+    String title,
+    List<Widget> fields,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: 12,
+    children: [
+      Semantics(
+        header: true,
+        child: Text(title, style: Theme.of(context).textTheme.titleMedium),
       ),
-    ),
+      ...fields,
+    ],
+  );
+
+  ButtonStyle get _scheduleButtonStyle => OutlinedButton.styleFrom(
+    minimumSize: const Size(0, 50),
+    alignment: AlignmentDirectional.centerStart,
   );
 
   Widget _dateButton(
@@ -1377,23 +1335,21 @@ class _StudentInternshipProfileScreenState
     String label,
     DateTime? value,
     ValueChanged<DateTime> onChanged,
-  ) => SizedBox(
-    width: 310,
-    child: OutlinedButton.icon(
-      icon: const Icon(Icons.calendar_month_outlined),
-      label: Text('$label: ${shortDate(value)}'),
-      onPressed: () async {
-        final selected = await showDatePicker(
-          context: context,
-          firstDate: DateTime(2020),
-          lastDate: DateTime(2040),
-          initialDate: value ?? DateTime.now(),
-        );
-        if (selected != null) {
-          onChanged(selected);
-        }
-      },
-    ),
+  ) => OutlinedButton.icon(
+    style: _scheduleButtonStyle,
+    icon: const Icon(Icons.calendar_month_outlined),
+    label: Text('$label: ${shortDate(value)}'),
+    onPressed: () async {
+      final selected = await showDatePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2040),
+        initialDate: value ?? DateTime.now(),
+      );
+      if (selected != null) {
+        onChanged(selected);
+      }
+    },
   );
 
   Widget _shiftTimeButton(
@@ -1401,28 +1357,26 @@ class _StudentInternshipProfileScreenState
     String label,
     int? minutes,
     ValueChanged<int> onChanged,
-  ) => SizedBox(
-    width: 310,
-    child: OutlinedButton.icon(
-      icon: const Icon(Icons.schedule_outlined),
-      label: Text(
-        minutes == null
-            ? '$label: Set time'
-            : '$label: ${TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60).format(context)}',
-      ),
-      onPressed: () async {
-        final initial = minutes == null
-            ? const TimeOfDay(hour: 8, minute: 0)
-            : TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
-        final selected = await showTimePicker(
-          context: context,
-          initialTime: initial,
-        );
-        if (selected != null) {
-          onChanged(selected.hour * 60 + selected.minute);
-        }
-      },
+  ) => OutlinedButton.icon(
+    style: _scheduleButtonStyle,
+    icon: const Icon(Icons.schedule_outlined),
+    label: Text(
+      minutes == null
+          ? '$label: Set time'
+          : '$label: ${TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60).format(context)}',
     ),
+    onPressed: () async {
+      final initial = minutes == null
+          ? const TimeOfDay(hour: 8, minute: 0)
+          : TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+      final selected = await showTimePicker(
+        context: context,
+        initialTime: initial,
+      );
+      if (selected != null) {
+        onChanged(selected.hour * 60 + selected.minute);
+      }
+    },
   );
 }
 
@@ -1431,31 +1385,25 @@ String _currentAcademicYear(DateTime date) {
   return '$startYear-${startYear + 1}';
 }
 
-String? _normalizeYearLevel(String value) {
-  final normalized = value.trim().toLowerCase();
-  const aliases = {
-    '1': '1st Year',
-    '1st': '1st Year',
-    '1st year': '1st Year',
-    'first year': '1st Year',
-    '2': '2nd Year',
-    '2nd': '2nd Year',
-    '2nd year': '2nd Year',
-    'second year': '2nd Year',
-    '3': '3rd Year',
-    '3rd': '3rd Year',
-    '3rd year': '3rd Year',
-    'third year': '3rd Year',
-    '4': '4th Year',
-    '4th': '4th Year',
-    '4th year': '4th Year',
-    'fourth year': '4th Year',
-    '5': '5th Year',
-    '5th': '5th Year',
-    '5th year': '5th Year',
-    'fifth year': '5th Year',
-  };
-  return aliases[normalized];
+class _CasCollegeField extends StatelessWidget {
+  const _CasCollegeField();
+
+  @override
+  Widget build(BuildContext context) => const InputDecorator(
+    decoration: InputDecoration(
+      labelText: 'College',
+      enabled: false,
+      fillColor: AppTheme.surfaceSoft,
+      constraints: BoxConstraints(minHeight: 54),
+      suffixIcon: Icon(
+        Icons.lock_outline_rounded,
+        size: 18,
+        color: AppTheme.muted,
+        semanticLabel: 'Assigned automatically',
+      ),
+    ),
+    child: Text(casCollegeName),
+  );
 }
 
 class _ProfileHeader extends StatelessWidget {

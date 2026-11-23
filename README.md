@@ -3,9 +3,12 @@
 ## Student invitations
 
 The CAS College Coordinator can use **Add student** in **Internship Records**
-to enter a full name, student number, and email address and send one invitation.
-Use **Import official roster** for a batch of JSON entries. A pending invitation
-can be resent from the student's row.
+to enter a full name, student number, and email address, then choose a CAS program
+and send one invitation. Every student belongs to the College of Arts and
+Sciences. Use **Import official roster** for a batch of JSON entries. Each row
+requires a `program` using one of the four program names or a recognized
+abbreviation (`BSPsych`, `BSIT`, `BSIS`, or `BSS`). A pending invitation can be
+resent from the student's row.
 
 ## Firebase for student invitations
 

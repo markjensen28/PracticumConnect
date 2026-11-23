@@ -1,3 +1,5 @@
+import 'cas_programs.dart';
+
 enum UserRole { admin, coordinator, student }
 
 extension UserRoleLabel on UserRole {
@@ -70,6 +72,8 @@ class AppUser {
   final String? photoUrl;
   final bool active;
 
+  String? get college => role == UserRole.student ? casCollegeName : null;
+
   bool get isPendingCoordinator =>
       role == UserRole.coordinator && approvalStatus == 'pending';
 
@@ -83,6 +87,7 @@ class AppUser {
 
   factory AppUser.fromMap(String uid, Map<String, dynamic> data) {
     final role = UserRoleLabel.parse(data['role'] as String?);
+    final program = data['program'] as String?;
     return AppUser(
       uid: uid,
       email: data['email'] as String? ?? '',
@@ -98,7 +103,9 @@ class AppUser {
       approvalStatus: data['approvalStatus'] as String? ?? 'approved',
       coordinatorId: data['coordinatorId'] as String?,
       coordinatorName: data['coordinatorName'] as String?,
-      program: data['program'] as String?,
+      program: role == UserRole.student
+          ? canonicalCasProgram(program) ?? program
+          : program,
       section: data['section'] as String?,
       yearLevel: data['yearLevel'] as String?,
       academicYear: data['academicYear'] as String?,

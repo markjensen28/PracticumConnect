@@ -9,6 +9,7 @@ import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import '../services/report_export_service.dart';
 import 'workflow_shared.dart';
+import 'workspace_select_field.dart';
 
 class AdvancedReportsScreen extends StatefulWidget {
   const AdvancedReportsScreen({
@@ -25,6 +26,7 @@ class AdvancedReportsScreen extends StatefulWidget {
 }
 
 class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
+  final _search = TextEditingController();
   String _reportType = 'Student Summary';
   String _program = 'All Programs';
   String _academicYear = 'All Academic Years';
@@ -32,6 +34,12 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
   String _query = '';
   DateTimeRange? _range;
   bool _exporting = false;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   List<String> get _availableReportTypes => widget.user.role == UserRole.admin
       ? _reportTypes
@@ -330,6 +338,13 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
                               status: effectiveStatus,
                               statuses: statuses,
                               range: _range,
+                              queryController: _search,
+                              canReset:
+                                  _program != 'All Programs' ||
+                                  _academicYear != 'All Academic Years' ||
+                                  _status != 'All Statuses' ||
+                                  _query.isNotEmpty ||
+                                  _range != null,
                               onReportType: (value) => setState(() {
                                 _reportType = value;
                                 _status = 'All Statuses';
@@ -344,6 +359,7 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
                                   setState(() => _query = value),
                               onDateRange: () => _pickRange(context),
                               onReset: () => setState(() {
+                                _search.clear();
                                 _program = 'All Programs';
                                 _academicYear = 'All Academic Years';
                                 _status = 'All Statuses';
@@ -360,7 +376,7 @@ class _AdvancedReportsScreenState extends State<AdvancedReportsScreen> {
                             SectionCard(
                               title: _reportType,
                               subtitle:
-                                  '${visibleRows.length} matching record(s) • Filters are applied before export.',
+                                  '${visibleRows.length} ${visibleRows.length == 1 ? 'record' : 'records'} in this report',
                               padding: EdgeInsets.zero,
                               child: visibleRows.isEmpty
                                   ? const Padding(
@@ -802,6 +818,8 @@ class _ReportFilters extends StatelessWidget {
     required this.status,
     required this.statuses,
     required this.range,
+    required this.queryController,
+    required this.canReset,
     required this.onReportType,
     required this.onProgram,
     required this.onAcademicYear,
@@ -820,6 +838,8 @@ class _ReportFilters extends StatelessWidget {
   final String status;
   final List<String> statuses;
   final DateTimeRange? range;
+  final TextEditingController queryController;
+  final bool canReset;
   final ValueChanged<String> onReportType;
   final ValueChanged<String> onProgram;
   final ValueChanged<String> onAcademicYear;
@@ -829,117 +849,77 @@ class _ReportFilters extends StatelessWidget {
   final VoidCallback onReset;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Wrap(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final inline = constraints.maxWidth >= 1050;
+      final type = WorkspaceSelectField(
+        key: ValueKey('report-type-$reportType'),
+        label: 'Report type',
+        options: reportTypes,
+        initialValue: reportType,
+        onChanged: onReportType,
+      );
+      final date = OutlinedButton.icon(
+        onPressed: onDateRange,
+        icon: const Icon(Icons.date_range_outlined, size: 17),
+        label: Text(
+          range == null
+              ? 'Any date'
+              : '${DateFormat.MMMd().format(range!.start)} – ${DateFormat.MMMd().format(range!.end)}',
+        ),
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 10,
-        runSpacing: 10,
-        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          SizedBox(
-            width: 220,
-            child: DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: reportType,
-              decoration: const InputDecoration(labelText: 'Report Type'),
-              items: reportTypes
-                  .map(
-                    (value) => DropdownMenuItem(
-                      value: value,
-                      child: Text(value, overflow: TextOverflow.ellipsis),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) onReportType(value);
-              },
+          if (!inline)
+            Row(
+              spacing: 10,
+              children: [
+                Expanded(child: type),
+                date,
+              ],
             ),
-          ),
-          SizedBox(
-            width: 190,
-            child: DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: academicYear,
-              decoration: const InputDecoration(labelText: 'Academic Year'),
-              items: academicYears
-                  .map(
-                    (value) => DropdownMenuItem(
-                      value: value,
-                      child: Text(value, overflow: TextOverflow.ellipsis),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) onAcademicYear(value);
-              },
-            ),
-          ),
-          SizedBox(
-            width: 190,
-            child: DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: program,
-              decoration: const InputDecoration(labelText: 'Program'),
-              items: programs
-                  .map(
-                    (value) => DropdownMenuItem(
-                      value: value,
-                      child: Text(value, overflow: TextOverflow.ellipsis),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) onProgram(value);
-              },
-            ),
-          ),
-          SizedBox(
-            width: 180,
-            child: DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: status,
-              decoration: const InputDecoration(labelText: 'Status'),
-              items: statuses
-                  .map(
-                    (value) => DropdownMenuItem(
-                      value: value,
-                      child: Text(value, overflow: TextOverflow.ellipsis),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) onStatus(value);
-              },
-            ),
-          ),
-          SizedBox(
-            width: 260,
-            child: TextField(
+          WorkspaceFilterBar(
+            search: TextField(
+              controller: queryController,
               decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search_rounded, size: 18),
-                hintText: 'Search report records…',
+                prefixIcon: Icon(Icons.search_rounded, size: 19),
+                hintText: 'Search report records',
               ),
               onChanged: onQuery,
             ),
-          ),
-          OutlinedButton.icon(
-            onPressed: onDateRange,
-            icon: const Icon(Icons.date_range_outlined, size: 17),
-            label: Text(
-              range == null
-                  ? 'Any Date'
-                  : '${DateFormat.MMMd().format(range!.start)} – ${DateFormat.MMMd().format(range!.end)}',
-            ),
-          ),
-          TextButton.icon(
-            onPressed: onReset,
-            icon: const Icon(Icons.restart_alt_rounded, size: 17),
-            label: const Text('Reset'),
+            fields: [
+              if (inline) type,
+              WorkspaceSelectField(
+                key: ValueKey('report-year-$academicYear'),
+                label: 'Academic year',
+                options: academicYears,
+                initialValue: academicYear,
+                onChanged: onAcademicYear,
+              ),
+              WorkspaceSelectField(
+                key: ValueKey('report-program-$program'),
+                label: 'Program',
+                options: programs,
+                initialValue: program,
+                onChanged: onProgram,
+              ),
+              WorkspaceSelectField(
+                key: ValueKey('report-status-$status'),
+                label: 'Status',
+                options: statuses,
+                initialValue: status,
+                onChanged: onStatus,
+              ),
+            ],
+            inlineAction: inline ? date : null,
+            onReset: onReset,
+            canReset: canReset,
           ),
         ],
-      ),
-    ),
+      );
+    },
   );
 }
 
@@ -950,33 +930,28 @@ class _ReportMetrics extends StatelessWidget {
   final int visibleCount;
 
   @override
-  Widget build(BuildContext context) {
-    final distinctStatuses = data.rows.map((row) => row.status).toSet().length;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        StatCard(
-          label: 'Matching Records',
-          value: '$visibleCount',
-          icon: Icons.table_rows_outlined,
-          color: AppTheme.blue,
-        ),
-        StatCard(
-          label: 'Available Records',
-          value: '${data.rows.length}',
-          icon: Icons.dataset_outlined,
-          color: AppTheme.purple,
-        ),
-        StatCard(
-          label: 'Status Groups',
-          value: '$distinctStatuses',
-          icon: Icons.donut_small_outlined,
-          color: AppTheme.success,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => WorkspaceMetrics(
+    items: [
+      (
+        label: 'Matching records',
+        value: visibleCount,
+        icon: Icons.table_rows_outlined,
+        color: AppTheme.blue,
+      ),
+      (
+        label: 'Available records',
+        value: data.rows.length,
+        icon: Icons.dataset_outlined,
+        color: AppTheme.purple,
+      ),
+      (
+        label: 'Status groups',
+        value: data.rows.map((row) => row.status).toSet().length,
+        icon: Icons.donut_small_outlined,
+        color: AppTheme.success,
+      ),
+    ],
+  );
 }
 
 class _ReportTable extends StatelessWidget {
@@ -988,6 +963,10 @@ class _ReportTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) => WorkspaceTable(
     child: DataTable(
+      horizontalMargin: 16,
+      columnSpacing: 22,
+      dataRowMinHeight: 54,
+      dataRowMaxHeight: 70,
       columns: headers
           .map(
             (header) => DataColumn(

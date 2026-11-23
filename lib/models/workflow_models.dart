@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'cas_programs.dart';
 import 'pdf_form_template.dart';
 
 enum InternshipStage {
@@ -66,9 +68,7 @@ class RequirementDefinition {
   final bool active;
 
   bool appliesToProgram(String? studentProgram) =>
-      program == 'All Programs' ||
-      program.trim().isEmpty ||
-      (studentProgram != null && program == studentProgram);
+      programAppliesTo(program, studentProgram);
 
   String get _workflowKey => '$category $title'.toLowerCase();
 

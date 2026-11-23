@@ -12,12 +12,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_theme.dart';
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 import '../models/records.dart';
 import '../models/workflow_models.dart';
 import '../services/practicum_repository.dart';
 import 'workflow_shared.dart';
 import 'pdf_template_widgets.dart';
 import 'repository_directory.dart';
+import 'workspace_select_field.dart';
 
 class StudentStatusTrackerScreen extends StatelessWidget {
   const StudentStatusTrackerScreen({
@@ -43,9 +45,7 @@ class StudentStatusTrackerScreen extends StatelessWidget {
           final definitions =
               (definitionSnapshot.data ?? const <RequirementDefinition>[])
                   .where(
-                    (definition) =>
-                        definition.program == 'All Programs' ||
-                        definition.program == user.program,
+                    (definition) => definition.appliesToProgram(user.program),
                   )
                   .toList();
           final records = recordSnapshot.data ?? const <RequirementRecord>[];
@@ -630,8 +630,7 @@ class _StudentRequirementsChecklistScreenState
                   .where(
                     (definition) =>
                         definition.active &&
-                        (definition.program == 'All Programs' ||
-                            definition.program == widget.user.program),
+                        definition.appliesToProgram(widget.user.program),
                   )
                   .toList()
                 ..sort((a, b) {
@@ -1179,8 +1178,7 @@ class _DocumentSubmissionBinScreenState
               .where(
                 (definition) =>
                     definition.active &&
-                    (definition.program == 'All Programs' ||
-                        definition.program == widget.user.program),
+                    definition.appliesToProgram(widget.user.program),
               )
               .toList();
           final confirmedSubmissions = _locallySubmittedDefinitions.where((id) {
@@ -2651,9 +2649,8 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
 
   @override
   Widget build(BuildContext context) => WorkflowPage(
-    title: 'Document Repository & Retrieval',
-    subtitle:
-        'Store, organize, search, preview, and retrieve internship documents.',
+    title: 'Document Repository',
+    subtitle: 'Find internship files by student, program, or review status.',
     eyebrow: 'Home  ›  Document Repository',
     actions: [
       OutlinedButton.icon(
@@ -2762,7 +2759,35 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                 selectedIndex: _tab,
                 onSelected: (value) => setState(() => _tab = value),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 12),
+              _RepositoryFilters(
+                queryController: _queryController,
+                queryChanged: (value) =>
+                    setState(() => _query = value.trim().toLowerCase()),
+                status: _status,
+                category: _category,
+                program: _program,
+                categories: categories,
+                programs: programs,
+                onStatus: (value) => setState(() => _status = value),
+                onCategory: (value) => setState(() => _category = value),
+                onProgram: (value) => setState(() => _program = value),
+                canReset:
+                    _folderPath.isNotEmpty ||
+                    _query.isNotEmpty ||
+                    _status != null ||
+                    _category != 'All Categories' ||
+                    _program != 'All Programs',
+                onReset: () => setState(() {
+                  _folderPath = [];
+                  _query = '';
+                  _queryController.clear();
+                  _status = null;
+                  _category = 'All Categories';
+                  _program = 'All Programs';
+                }),
+              ),
+              const SizedBox(height: 12),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
@@ -2800,71 +2825,34 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                           ),
                         if (constraints.maxWidth < 1180 && _showFolders)
                           Expanded(child: folders)
-                        else ...[
-                          ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: constraints.maxHeight * 0.4,
-                            ),
-                            child: SingleChildScrollView(
-                              child: _RepositoryFilters(
-                                queryController: _queryController,
-                                queryChanged: (value) => setState(
-                                  () => _query = value.toLowerCase(),
-                                ),
-                                status: _status,
-                                category: _category,
-                                program: _program,
-                                categories: categories,
-                                programs: programs,
-                                onStatus: (value) =>
-                                    setState(() => _status = value),
-                                onCategory: (value) =>
-                                    setState(() => _category = value),
-                                onProgram: (value) =>
-                                    setState(() => _program = value),
-                                onReset: () => setState(() {
-                                  _folderPath = [];
-                                  _query = '';
-                                  _queryController.clear();
-                                  _status = null;
-                                  _category = 'All Categories';
-                                  _program = 'All Programs';
-                                }),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 9),
+                        else
                           Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, listConstraints) =>
-                                  _RepositoryList(
-                                    compact: listConstraints.maxWidth < 590,
-                                    showMetadata:
-                                        listConstraints.maxWidth >= 790,
-                                    records: records,
-                                    selected: selected,
-                                    onSelect: (record) {
-                                      setState(() => _selected = record);
-                                      if (narrow) {
-                                        showModalBottomSheet<void>(
-                                          context: context,
-                                          isScrollControlled: true,
-                                          builder: (_) => FractionallySizedBox(
-                                            heightFactor: 0.8,
-                                            child: SingleChildScrollView(
-                                              child: _RepositoryDetails(
-                                                record: record,
-                                                repository: widget.repository,
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
+                            child: _RepositoryList(
+                              folderName: chain.last.label,
+                              records: records,
+                              selected: selected,
+                              onSelect: (record) {
+                                setState(() => _selected = record);
+                                if (narrow) {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    useSafeArea: true,
+                                    showDragHandle: true,
+                                    builder: (_) => FractionallySizedBox(
+                                      heightFactor: 0.8,
+                                      child: SingleChildScrollView(
+                                        child: _RepositoryDetails(
+                                          record: record,
+                                          repository: widget.repository,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
                             ),
                           ),
-                        ],
                       ],
                     );
                     final details = selected == null
@@ -2882,9 +2870,9 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           SizedBox(width: 246, child: folders),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
                           Expanded(child: list),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
                           SizedBox(
                             width: 315,
                             child: SingleChildScrollView(child: details),
@@ -2896,10 +2884,10 @@ class _DocumentRepositoryScreenState extends State<DocumentRepositoryScreen> {
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(flex: 7, child: list),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            flex: 3,
+                          Expanded(child: list),
+                          const SizedBox(width: 12),
+                          SizedBox(
+                            width: 315,
                             child: SingleChildScrollView(child: details),
                           ),
                         ],
@@ -2930,6 +2918,7 @@ class _RepositoryFilters extends StatelessWidget {
     required this.onCategory,
     required this.onProgram,
     required this.onReset,
+    required this.canReset,
   });
 
   final TextEditingController queryController;
@@ -2943,300 +2932,244 @@ class _RepositoryFilters extends StatelessWidget {
   final ValueChanged<String> onCategory;
   final ValueChanged<String> onProgram;
   final VoidCallback onReset;
+  final bool canReset;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(9),
-      child: Wrap(
-        spacing: 7,
-        runSpacing: 7,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(
-            width: 260,
-            child: TextField(
-              controller: queryController,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search, size: 18),
-                hintText: 'Search files or students',
-              ),
-              onChanged: queryChanged,
-            ),
-          ),
-          SizedBox(
-            width: 145,
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('repository-program-$program'),
-              isExpanded: true,
-              initialValue: programs.contains(program)
-                  ? program
-                  : 'All Programs',
-              decoration: const InputDecoration(labelText: 'Program'),
-              items: programs
-                  .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
-                  )
-                  .toList(),
-              onChanged: (value) => onProgram(value ?? 'All Programs'),
-            ),
-          ),
-          SizedBox(
-            width: 155,
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('repository-category-$category'),
-              isExpanded: true,
-              initialValue: categories.contains(category)
-                  ? category
-                  : 'All Categories',
-              decoration: const InputDecoration(labelText: 'Document Category'),
-              items: categories
-                  .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
-                  )
-                  .toList(),
-              onChanged: (value) => onCategory(value ?? 'All Categories'),
-            ),
-          ),
-          SizedBox(
-            width: 145,
-            child: DropdownButtonFormField<ReviewStatus?>(
-              key: ValueKey("repository-status-${status?.name ?? 'all'}"),
-              isExpanded: true,
-              initialValue: status,
-              decoration: const InputDecoration(
-                labelText: 'Verification Status',
-              ),
-              items: [
-                const DropdownMenuItem<ReviewStatus?>(
-                  value: null,
-                  child: Text('All Statuses'),
-                ),
-                ...ReviewStatus.values.map(
-                  (value) => DropdownMenuItem<ReviewStatus?>(
-                    value: value,
-                    child: Text(value.label),
-                  ),
-                ),
-              ],
-              onChanged: onStatus,
-            ),
-          ),
-          OutlinedButton.icon(
-            onPressed: onReset,
-            icon: const Icon(Icons.restart_alt, size: 15),
-            label: const Text('Reset Filters'),
-          ),
-        ],
+  Widget build(BuildContext context) => WorkspaceFilterBar(
+    search: TextField(
+      controller: queryController,
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search_rounded, size: 19),
+        hintText: 'Search files or students',
       ),
+      onChanged: queryChanged,
     ),
+    fields: [
+      WorkspaceSelectField(
+        key: ValueKey('repository-program-$program'),
+        initialValue: program,
+        label: 'Program',
+        options: programs,
+        onChanged: onProgram,
+      ),
+      WorkspaceSelectField(
+        key: ValueKey('repository-category-$category'),
+        initialValue: category,
+        label: 'Category',
+        options: categories,
+        onChanged: onCategory,
+      ),
+      WorkspaceSelectField(
+        key: ValueKey('repository-status-${status?.name}'),
+        initialValue: status?.label ?? 'All Statuses',
+        label: 'Status',
+        options: [
+          'All Statuses',
+          ...ReviewStatus.values.map((value) => value.label),
+        ],
+        onChanged: (value) => onStatus(
+          ReviewStatus.values
+              .where((status) => status.label == value)
+              .firstOrNull,
+        ),
+      ),
+    ],
+    onReset: onReset,
+    canReset: canReset,
   );
 }
 
 class _RepositoryList extends StatelessWidget {
   const _RepositoryList({
     required this.records,
-    required this.compact,
-    required this.showMetadata,
     required this.selected,
     required this.onSelect,
+    required this.folderName,
   });
 
-  final bool compact;
-  final bool showMetadata;
   final List<RequirementRecord> records;
   final RequirementRecord? selected;
   final ValueChanged<RequirementRecord> onSelect;
+  final String folderName;
 
   @override
   Widget build(BuildContext context) => Card(
-    child: records.isEmpty
-        ? const EmptyWorkflowState(
-            icon: Icons.folder_off_outlined,
-            title: 'No matching documents',
-            message: 'Adjust the repository filters.',
-          )
-        : compact
-        ? ListView.separated(
-            itemCount: records.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final record = records[i];
-              return ListTile(
-                leading: const Icon(
-                  Icons.description_outlined,
-                  color: AppTheme.blue,
-                ),
-                title: Text(record.fileName ?? record.title),
-                subtitle: Text(
-                  '${record.studentName} / ${record.status.label}',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => onSelect(record),
-              );
-            },
-          )
-        : Column(
-            children: [
-              Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                color: AppTheme.surfaceBlue,
-                child: Row(
-                  spacing: 10,
-                  children: [
-                    const Expanded(
-                      flex: 4,
-                      child: Text('File Name', style: _headerStyle),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 610;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Row(
+                spacing: 12,
+                children: [
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        folderName,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    const Expanded(
-                      flex: 3,
-                      child: Text('Student', style: _headerStyle),
-                    ),
-                    if (showMetadata) ...const [
+                  ),
+                  Text(
+                    '${records.length} ${records.length == 1 ? 'file' : 'files'}',
+                    style: const TextStyle(color: AppTheme.muted),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            if (!compact && records.isNotEmpty) ...[
+              const ColoredBox(
+                color: AppTheme.surfaceSoft,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    spacing: 12,
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: Text('File name', style: _headerStyle),
+                      ),
                       Expanded(
                         flex: 3,
-                        child: Text('Program', style: _headerStyle),
+                        child: Text('Student', style: _headerStyle),
                       ),
-                      Expanded(
-                        flex: 2,
-                        child: Text('Category', style: _headerStyle),
+                      SizedBox(
+                        width: 110,
+                        child: Text('Uploaded', style: _headerStyle),
                       ),
+                      SizedBox(
+                        width: 110,
+                        child: Text('Status', style: _headerStyle),
+                      ),
+                      SizedBox(width: 16),
                     ],
-                    const Expanded(
-                      flex: 3,
-                      child: Text('Status', style: _headerStyle),
-                    ),
-                    const Expanded(
-                      flex: 3,
-                      child: Text('Uploaded', style: _headerStyle),
-                    ),
-                    const SizedBox(width: 18),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: records.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final record = records[index];
-                    final active = selected?.id == record.id;
-                    final pdf =
-                        record.fileName?.toLowerCase().endsWith('.pdf') ??
-                        false;
-                    return InkWell(
-                      onTap: () => onSelect(record),
-                      child: Ink(
-                        color: active ? AppTheme.surfaceBlue : Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          spacing: 10,
-                          children: [
-                            Expanded(
-                              flex: 4,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    pdf
-                                        ? Icons.picture_as_pdf_outlined
-                                        : Icons.description_outlined,
-                                    size: 18,
-                                    color: pdf
-                                        ? AppTheme.danger
-                                        : AppTheme.blue,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      record.fileName ?? record.title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: AppTheme.fontCaption,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(flex: 3, child: _cell(record.studentName)),
-                            if (showMetadata) ...[
-                              Expanded(
-                                flex: 3,
-                                child: _cell(record.program ?? '—'),
-                              ),
-                              Expanded(flex: 2, child: _cell(record.category)),
-                            ],
-                            Expanded(
-                              flex: 3,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: StatusBadge(
-                                  record.status.label,
-                                  compact: true,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 3,
-                              child: _cell(shortDate(record.submittedAt)),
-                            ),
-                            const SizedBox(
-                              width: 18,
-                              child: Icon(
-                                Icons.chevron_right_rounded,
-                                size: 18,
-                                color: AppTheme.muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Container(
-                height: 40,
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: AppTheme.border)),
-                ),
-                child: Text(
-                  '${records.length} document${records.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                    fontSize: AppTheme.fontCaption,
-                    color: AppTheme.muted,
                   ),
                 ),
               ),
+              const Divider(height: 1),
             ],
-          ),
-  );
-
-  static const TextStyle _headerStyle = TextStyle(
-    fontSize: AppTheme.fontCaption,
-    color: AppTheme.navy,
-    fontWeight: FontWeight.w700,
-  );
-
-  Widget _cell(String value) => Text(
-    value,
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-    style: const TextStyle(
-      fontSize: AppTheme.fontCaption,
-      color: AppTheme.text,
+            Expanded(
+              child: records.isEmpty
+                  ? const EmptyWorkflowState(
+                      icon: Icons.folder_off_outlined,
+                      title: 'No matching documents',
+                      message: 'Try a different folder or adjust the filters.',
+                    )
+                  : ListView.separated(
+                      itemCount: records.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) =>
+                          _recordRow(records[index], compact: compact),
+                    ),
+            ),
+          ],
+        );
+      },
     ),
+  );
+
+  Widget _recordRow(RequirementRecord record, {required bool compact}) {
+    final active = selected?.id == record.id;
+    final name = record.fileName ?? record.title;
+    final pdf = name.toLowerCase().endsWith('.pdf');
+    final status = StatusBadge(record.status.label, compact: true);
+    final date = shortDate(record.submittedAt);
+    final file = Row(
+      spacing: 8,
+      children: [
+        Icon(
+          pdf ? Icons.picture_as_pdf_outlined : Icons.description_outlined,
+          color: pdf ? AppTheme.danger : AppTheme.blue,
+          size: 18,
+        ),
+        Expanded(
+          child: Tooltip(
+            message: name,
+            excludeFromSemantics: true,
+            child: Text(
+              name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
+    return Semantics(
+      button: true,
+      selected: active,
+      child: InkWell(
+        onTap: () => onSelect(record),
+        child: Ink(
+          color: active ? AppTheme.surfaceBlue : AppTheme.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 6,
+                  children: [
+                    file,
+                    Row(
+                      spacing: 8,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${record.studentName} • $date',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: AppTheme.muted),
+                          ),
+                        ),
+                        status,
+                        const Icon(Icons.chevron_right_rounded, size: 16),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  spacing: 12,
+                  children: [
+                    Expanded(flex: 5, child: file),
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        record.studentName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    SizedBox(width: 110, child: Text(date)),
+                    SizedBox(
+                      width: 110,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: status,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: AppTheme.muted,
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  static const _headerStyle = TextStyle(
+    fontSize: AppTheme.fontCaption,
+    color: AppTheme.muted,
+    fontWeight: FontWeight.w700,
   );
 }
 
@@ -3245,9 +3178,17 @@ class _RepositoryDetails extends StatelessWidget {
   final RequirementRecord record;
   final PracticumRepository repository;
 
+  String get _fileType {
+    final name = record.fileName ?? '';
+    final dot = name.lastIndexOf('.');
+    return dot >= 0 && dot < name.length - 1
+        ? name.substring(dot + 1).toUpperCase()
+        : 'File';
+  }
+
   @override
   Widget build(BuildContext context) => SectionCard(
-    title: 'Document Details',
+    title: 'Document details',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -3258,12 +3199,16 @@ class _RepositoryDetails extends StatelessWidget {
               height: 48,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppTheme.danger.withValues(alpha: .08),
+                color: _fileType == 'PDF'
+                    ? AppTheme.danger.withValues(alpha: .08)
+                    : AppTheme.surfaceBlue,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Icon(
-                Icons.picture_as_pdf,
-                color: AppTheme.danger,
+              child: Icon(
+                _fileType == 'PDF'
+                    ? Icons.picture_as_pdf_outlined
+                    : Icons.description_outlined,
+                color: _fileType == 'PDF' ? AppTheme.danger : AppTheme.blue,
                 size: 24,
               ),
             ),
@@ -3282,7 +3227,7 @@ class _RepositoryDetails extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'PDF Document • Version ${record.version}',
+                    '$_fileType • Version ${record.version}',
                     style: const TextStyle(
                       fontSize: AppTheme.fontCaption,
                       color: AppTheme.muted,
@@ -3572,218 +3517,302 @@ class DocumentReviewScreen extends StatefulWidget {
 }
 
 class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
+  static const _allPrograms = 'All programs';
+  static const _allTypes = 'All document types';
+  static const _allStatuses = 'All statuses';
+
+  final _search = TextEditingController();
+  late Stream<List<RequirementRecord>> _requirements;
   String _query = '';
-  ReviewStatus? _status;
-  String _program = 'All Programs';
-  String _type = 'All Document Types';
-  RequirementRecord? _selected;
-  final _feedback = TextEditingController();
+  String _status = _allStatuses;
+  String _program = _allPrograms;
+  String _type = _allTypes;
+  String? _selectedId;
+  bool _openDetail = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _requirements = widget.repository.watchRequirements(widget.user);
+  }
+
+  @override
+  void didUpdateWidget(covariant DocumentReviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != widget.repository ||
+        oldWidget.user.uid != widget.user.uid ||
+        oldWidget.user.role != widget.user.role) {
+      _requirements = widget.repository.watchRequirements(widget.user);
+      _selectedId = null;
+      _openDetail = false;
+    }
+  }
 
   @override
   void dispose() {
-    _feedback.dispose();
+    _search.dispose();
     super.dispose();
   }
+
+  void _reset() => setState(() {
+    _search.clear();
+    _query = '';
+    _status = _allStatuses;
+    _program = _allPrograms;
+    _type = _allTypes;
+  });
+
+  String? _programFor(RequirementRecord record) =>
+      canonicalCasProgram(record.program) ?? record.program;
 
   @override
   Widget build(BuildContext context) => WorkflowPage(
     title: 'Document Review',
-    subtitle: 'Review and verify student submissions.',
+    subtitle: 'Preview submissions and record your verification decisions.',
     child: StreamBuilder<List<RequirementRecord>>(
-      stream: widget.repository.watchRequirements(widget.user),
+      stream: _requirements,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const EmptyWorkflowState(
+            icon: Icons.error_outline,
+            title: 'Could not load submissions',
+            message: 'Try opening Document Review again.',
+          );
+        }
+        if (!snapshot.hasData &&
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
         final all = snapshot.data ?? const <RequirementRecord>[];
-        final programs = {
-          'All Programs',
-          ...all.map((record) => record.program).whereType<String>(),
-        }.toList();
-        final types = {
-          'All Document Types',
-          ...all.map((record) => record.category),
-        }.toList();
+        final programs = [
+          _allPrograms,
+          ...{
+            ...all.map(_programFor).whereType<String>(),
+          }.where((program) => program.trim().isNotEmpty),
+        ];
+        final types = [
+          _allTypes,
+          ...{...all.map((record) => record.category)},
+        ];
         final records = all.where((record) {
           final haystack =
-              '${record.studentName} ${record.studentNumber} ${record.title} ${record.fileName}'
+              '${record.studentName} ${record.studentNumber ?? ''} ${record.title} ${record.fileName ?? ''}'
                   .toLowerCase();
-          return (_query.isEmpty || haystack.contains(_query)) &&
-              (_status == null || record.status == _status) &&
-              (_program == 'All Programs' || record.program == _program) &&
-              (_type == 'All Document Types' || record.category == _type);
+          return haystack.contains(_query) &&
+              (_status == _allStatuses || record.status.label == _status) &&
+              (_program == _allPrograms || _programFor(record) == _program) &&
+              (_type == _allTypes || record.category == _type);
         }).toList();
         final selected =
-            _selected != null &&
-                records.any((record) => record.id == _selected!.id)
-            ? records.firstWhere((record) => record.id == _selected!.id)
-            : records.firstOrNull;
-        return Column(
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(9),
-                child: Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    SizedBox(
-                      width: 175,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: programs.contains(_program)
-                            ? _program
-                            : 'All Programs',
-                        decoration: const InputDecoration(labelText: 'Program'),
-                        items: programs
-                            .map(
-                              (value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => _program = value ?? 'All Programs'),
-                      ),
+            records.where((record) => record.id == _selectedId).firstOrNull ??
+            records.firstOrNull;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final split = constraints.maxWidth >= 920;
+            final list = _ReviewList(
+              records: records,
+              selected: split ? selected : null,
+              onSelect: (record) => setState(() {
+                _selectedId = record.id;
+                _openDetail = true;
+              }),
+            );
+            final detail = selected == null
+                ? const Card(
+                    child: EmptyWorkflowState(
+                      icon: Icons.rate_review_outlined,
+                      title: 'No submission selected',
+                      message: 'Select a document to review it.',
                     ),
-                    SizedBox(
-                      width: 180,
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: types.contains(_type)
-                            ? _type
-                            : 'All Document Types',
-                        decoration: const InputDecoration(
-                          labelText: 'Document Type',
-                        ),
-                        items: types
-                            .map(
-                              (value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) => setState(
-                          () => _type = value ?? 'All Document Types',
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 155,
-                      child: DropdownButtonFormField<ReviewStatus?>(
-                        isExpanded: true,
-                        initialValue: _status,
-                        decoration: const InputDecoration(labelText: 'Status'),
-                        items: [
-                          const DropdownMenuItem<ReviewStatus?>(
-                            value: null,
-                            child: Text('All Statuses'),
-                          ),
-                          ...ReviewStatus.values.map(
-                            (value) => DropdownMenuItem<ReviewStatus?>(
-                              value: value,
-                              child: Text(value.label),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) => setState(() => _status = value),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 250,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search, size: 18),
-                          hintText: 'Search by student name, ID, or document…',
-                        ),
-                        onChanged: (value) =>
-                            setState(() => _query = value.toLowerCase()),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => setState(() {
-                        _query = '';
-                        _status = null;
-                        _program = 'All Programs';
-                        _type = 'All Document Types';
-                      }),
-                      icon: const Icon(Icons.restart_alt, size: 15),
-                      label: const Text('Reset'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 9),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final list = _ReviewList(
-                    records: records,
-                    selected: selected,
-                    onSelect: (record) => setState(() {
-                      _selected = record;
-                      _feedback.text = record.remarks ?? '';
-                    }),
+                  )
+                : _ReviewDetail(
+                    key: ValueKey(selected.id),
+                    record: selected,
+                    repository: widget.repository,
+                    onStatus: (status, feedback) =>
+                        _saveStatus(selected, status, feedback),
                   );
-                  final detail = selected == null
-                      ? const EmptyWorkflowState(
-                          icon: Icons.rate_review_outlined,
-                          title: 'No submission selected',
-                          message: 'Select a document to review it.',
+
+            if (!split && _openDetail && selected != null) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => setState(() => _openDetail = false),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('Back to submissions'),
+                  ),
+                  Expanded(
+                    child: SizedBox(width: double.infinity, child: detail),
+                  ),
+                ],
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 12,
+              children: [
+                _toolbar(context, programs, types, split: split),
+                Expanded(
+                  child: split
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          spacing: 12,
+                          children: [
+                            Expanded(flex: 5, child: list),
+                            Expanded(flex: 6, child: detail),
+                          ],
                         )
-                      : _ReviewDetail(
-                          record: selected,
-                          repository: widget.repository,
-                          feedback: _feedback,
-                          onStatus: (status) =>
-                              _saveStatus(context, selected, status),
-                        );
-                  if (constraints.maxWidth < 900) {
-                    return Column(
-                      children: [
-                        Expanded(child: list),
-                        const SizedBox(height: 9),
-                        SizedBox(
-                          height: 430,
-                          child: SingleChildScrollView(child: detail),
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(flex: 6, child: list),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        flex: 5,
-                        child: SingleChildScrollView(child: detail),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+                      : list,
+                ),
+              ],
+            );
+          },
         );
       },
     ),
   );
 
-  Future<void> _saveStatus(
+  Widget _toolbar(
     BuildContext context,
+    List<String> programs,
+    List<String> types, {
+    required bool split,
+  }) {
+    final search = TextField(
+      controller: _search,
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search_rounded, size: 20),
+        hintText: 'Search submissions',
+        constraints: BoxConstraints(minHeight: 54),
+      ),
+      onChanged: (value) => setState(() => _query = value.trim().toLowerCase()),
+    );
+    final filtered =
+        _status != _allStatuses ||
+        _program != _allPrograms ||
+        _type != _allTypes;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          spacing: 10,
+          children: [
+            Expanded(flex: 3, child: search),
+            if (split) ...[
+              for (final field in _filterFields(programs, types, setState))
+                Expanded(flex: 2, child: field),
+              TextButton.icon(
+                onPressed: filtered || _query.isNotEmpty ? _reset : null,
+                icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                label: const Text('Reset'),
+              ),
+            ] else
+              OutlinedButton.icon(
+                onPressed: () => _showFilters(context, programs, types),
+                icon: Icon(
+                  filtered ? Icons.filter_alt_rounded : Icons.tune_rounded,
+                  size: 18,
+                ),
+                label: const Text('Filters'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _filterFields(
+    List<String> programs,
+    List<String> types,
+    StateSetter update,
+  ) => [
+    WorkspaceSelectField(
+      key: ValueKey('program-$_program'),
+      label: 'Program',
+      initialValue: programs.contains(_program) ? _program : _allPrograms,
+      options: programs,
+      onChanged: (value) => update(() => _program = value),
+    ),
+    WorkspaceSelectField(
+      key: ValueKey('type-$_type'),
+      label: 'Document type',
+      initialValue: types.contains(_type) ? _type : _allTypes,
+      options: types,
+      onChanged: (value) => update(() => _type = value),
+    ),
+    WorkspaceSelectField(
+      key: ValueKey('status-$_status'),
+      label: 'Status',
+      initialValue: _status,
+      options: [
+        _allStatuses,
+        ...ReviewStatus.values.map((status) => status.label),
+      ],
+      onChanged: (value) => update(() => _status = value),
+    ),
+  ];
+
+  void _showFilters(
+    BuildContext context,
+    List<String> programs,
+    List<String> types,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, refresh) => AlertDialog(
+          title: const Text('Filter submissions'),
+          scrollable: true,
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 12,
+              children: _filterFields(programs, types, (change) {
+                setState(change);
+                refresh(() {});
+              }),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _reset();
+                refresh(() {});
+              },
+              child: const Text('Reset'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveStatus(
     RequirementRecord record,
     ReviewStatus status,
+    String feedback,
   ) async {
     await widget.repository.updateRequirementStatus(
       requirementId: record.id,
       status: status,
-      remarks: _feedback.text,
+      remarks: feedback,
       reviewer: widget.user,
     );
-    if (context.mounted) {
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Document marked ${status.label}.')),
+        SnackBar(
+          content: Text('Document marked ${status.label.toLowerCase()}.'),
+        ),
       );
     }
   }
@@ -3802,153 +3831,189 @@ class _ReviewList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-    child: records.isEmpty
-        ? const EmptyWorkflowState(
-            icon: Icons.inbox_outlined,
-            title: 'No submissions found',
-            message: 'Adjust the review filters.',
-          )
-        : Column(
-            children: [
-              Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final table = constraints.maxWidth >= 480;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        'Submissions',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${records.length} ${records.length == 1 ? 'result' : 'results'}',
+                    style: const TextStyle(
+                      fontSize: AppTheme.fontCaption,
+                      color: AppTheme.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            if (table && records.isNotEmpty) ...[
+              const ColoredBox(
                 color: AppTheme.surfaceSoft,
-                child: const Row(
-                  children: [
-                    SizedBox(width: 28),
-                    Expanded(
-                      flex: 3,
-                      child: Text('Student Name', style: _reviewHeader),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text('Document', style: _reviewHeader),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Date Submitted', style: _reviewHeader),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Status', style: _reviewHeader),
-                    ),
-                    SizedBox(width: 28),
-                  ],
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    spacing: 8,
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text('Student', style: _headerStyle),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Text('Document', style: _headerStyle),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text('Submitted', style: _headerStyle),
+                      ),
+                      SizedBox(
+                        width: _statusWidth,
+                        child: Text('Status', style: _headerStyle),
+                      ),
+                      SizedBox(width: 16),
+                    ],
+                  ),
                 ),
               ),
               const Divider(height: 1),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: records.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final record = records[index];
-                    final active = selected?.id == record.id;
-                    return InkWell(
-                      onTap: () => onSelect(record),
-                      child: Container(
-                        color: active ? AppTheme.surfaceBlue : Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 28,
-                              child: Icon(
-                                active
-                                    ? Icons.check_box
-                                    : Icons.check_box_outline_blank,
-                                size: 14,
-                                color: active ? AppTheme.blue : AppTheme.muted,
-                              ),
-                            ),
-                            Expanded(
-                              flex: 3,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    record.studentName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: AppTheme.fontCaption,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  Text(
-                                    record.studentNumber ?? '',
-                                    style: const TextStyle(
-                                      fontSize: AppTheme.fontCaption,
-                                      color: AppTheme.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(flex: 3, child: _reviewCell(record.title)),
-                            Expanded(
-                              flex: 2,
-                              child: _reviewCell(shortDate(record.submittedAt)),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: StatusBadge(
-                                  record.status.label,
-                                  compact: true,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(
-                              width: 28,
-                              child: Icon(
-                                Icons.more_horiz,
-                                size: 16,
-                                color: AppTheme.muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
             ],
-          ),
+            Expanded(
+              child: records.isEmpty
+                  ? const EmptyWorkflowState(
+                      icon: Icons.inbox_outlined,
+                      title: 'No submissions found',
+                      message: 'Adjust the review filters.',
+                    )
+                  : ListView.separated(
+                      itemCount: records.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) =>
+                          _row(records[index], table: table),
+                    ),
+            ),
+          ],
+        );
+      },
+    ),
   );
 
-  static const TextStyle _reviewHeader = TextStyle(
+  Widget _row(RequirementRecord record, {required bool table}) {
+    final active = selected?.id == record.id;
+    final status = StatusBadge(record.status.label, compact: true);
+    final chevron = Icon(
+      Icons.chevron_right_rounded,
+      size: 16,
+      color: active ? AppTheme.blue : AppTheme.muted,
+    );
+    final id = record.studentNumber ?? '';
+    final date = shortDate(record.submittedAt);
+
+    return Semantics(
+      button: true,
+      selected: active,
+      child: InkWell(
+        onTap: () => onSelect(record),
+        child: Ink(
+          color: active ? AppTheme.surfaceBlue : AppTheme.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          child: table
+              ? Row(
+                  spacing: 8,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 2,
+                        children: [
+                          _cell(record.studentName, primary: true),
+                          if (id.isNotEmpty) _cell(id),
+                        ],
+                      ),
+                    ),
+                    Expanded(flex: 3, child: _cell(record.title)),
+                    Expanded(flex: 2, child: _cell(date)),
+                    SizedBox(
+                      width: _statusWidth,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: status,
+                      ),
+                    ),
+                    chevron,
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 5,
+                  children: [
+                    Row(
+                      spacing: 8,
+                      children: [
+                        Expanded(child: _cell(record.title, primary: true)),
+                        status,
+                        chevron,
+                      ],
+                    ),
+                    _cell(
+                      [
+                        record.studentName,
+                        id,
+                        date,
+                      ].where((value) => value.isNotEmpty).join(' • '),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  static const double _statusWidth = 120;
+  static const _headerStyle = TextStyle(
     fontSize: AppTheme.fontCaption,
     color: AppTheme.muted,
     fontWeight: FontWeight.w700,
   );
 
-  Widget _reviewCell(String value) => Text(
+  Widget _cell(String value, {bool primary = false}) => Text(
     value,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
-    style: const TextStyle(fontSize: AppTheme.fontCaption),
+    style: TextStyle(
+      fontSize: primary ? AppTheme.fontSmall : AppTheme.fontCaption,
+      color: primary ? AppTheme.text : AppTheme.muted,
+      fontWeight: primary ? FontWeight.w700 : FontWeight.w400,
+    ),
   );
 }
 
 class _ReviewDetail extends StatefulWidget {
   const _ReviewDetail({
+    super.key,
     required this.record,
     required this.repository,
-    required this.feedback,
     required this.onStatus,
   });
 
   final RequirementRecord record;
   final PracticumRepository repository;
-  final TextEditingController feedback;
-  final ValueChanged<ReviewStatus> onStatus;
+  final Future<void> Function(ReviewStatus status, String feedback) onStatus;
 
   @override
   State<_ReviewDetail> createState() => _ReviewDetailState();
@@ -3956,91 +4021,169 @@ class _ReviewDetail extends StatefulWidget {
 
 class _ReviewDetailState extends State<_ReviewDetail> {
   int _tab = 0;
+  bool _saving = false;
+  late final TextEditingController _feedback;
   String? _previewPath;
   Future<String>? _previewUrlFuture;
 
   @override
+  void initState() {
+    super.initState();
+    _feedback = TextEditingController(text: widget.record.remarks);
+  }
+
+  @override
+  void dispose() {
+    _feedback.dispose();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(covariant _ReviewDetail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.record.id != widget.record.id ||
-        oldWidget.record.storagePath != widget.record.storagePath) {
+    if (oldWidget.record.storagePath != widget.record.storagePath) {
       _tab = 0;
       _previewPath = null;
       _previewUrlFuture = null;
     }
+    if (oldWidget.record.remarks != widget.record.remarks &&
+        _feedback.text == (oldWidget.record.remarks ?? '')) {
+      _feedback.text = widget.record.remarks ?? '';
+    }
+  }
+
+  Future<void> _decide(ReviewStatus status) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onStatus(status, _feedback.text);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save the review. $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context) => SectionCard(
-    title: widget.record.title,
-    trailing: const Icon(Icons.description_outlined, size: 17),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          '${widget.record.studentName}   ${widget.record.studentNumber ?? ''}',
-          style: const TextStyle(
-            fontSize: AppTheme.fontCaption,
-            color: AppTheme.muted,
+  Widget build(BuildContext context) => Card(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final short = constraints.maxHeight < 300;
+        final content = Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 14,
+            children: [
+              _tabBody(context),
+              TextField(
+                controller: _feedback,
+                enabled: !_saving,
+                minLines: 2,
+                maxLines: 4,
+                maxLength: 1000,
+                decoration: const InputDecoration(
+                  labelText: 'Coordinator feedback',
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 7),
-        WorkspaceTabs(
-          labels: const [
-            'Document',
-            'Student Info',
-            'Submission Details',
-            'History',
-            'Comments',
-          ],
-          selectedIndex: _tab,
-          onSelected: (value) => setState(() => _tab = value),
-        ),
-        const SizedBox(height: 8),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: KeyedSubtree(
-            key: ValueKey('${widget.record.id}-$_tab'),
-            child: _tabBody(context),
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: widget.feedback,
-          minLines: 3,
-          maxLines: 4,
-          maxLength: 1000,
-          decoration: const InputDecoration(
-            labelText: 'Coordinator Feedback',
-            hintText: 'Write your feedback here…',
-          ),
-        ),
-        const SizedBox(height: 2),
-        Row(
+        );
+        final panel = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => widget.onStatus(ReviewStatus.needsRevision),
-                child: const Text('Request Revision'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 12,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 4,
+                      children: [
+                        Semantics(
+                          header: true,
+                          child: Text(
+                            widget.record.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        Text(
+                          [
+                                widget.record.studentName,
+                                widget.record.studentNumber,
+                              ]
+                              .whereType<String>()
+                              .where((value) => value.isNotEmpty)
+                              .join(' • '),
+                          style: const TextStyle(color: AppTheme.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  StatusBadge(widget.record.status.label, compact: true),
+                ],
               ),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => widget.onStatus(ReviewStatus.rejected),
-                child: const Text('Reject'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: WorkspaceTabs(
+                labels: const [
+                  'Document',
+                  'Student info',
+                  'Submission details',
+                  'History',
+                  'Comments',
+                ],
+                selectedIndex: _tab,
+                onSelected: (value) => setState(() => _tab = value),
               ),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: FilledButton(
-                onPressed: () => widget.onStatus(ReviewStatus.verified),
-                child: const Text('Approve'),
+            if (short)
+              content
+            else
+              Expanded(child: SingleChildScrollView(child: content)),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  OutlinedButton(
+                    onPressed: _saving
+                        ? null
+                        : () => _decide(ReviewStatus.needsRevision),
+                    child: const Text('Request revision'),
+                  ),
+                  TextButton(
+                    onPressed: _saving
+                        ? null
+                        : () => _decide(ReviewStatus.rejected),
+                    child: const Text('Reject'),
+                  ),
+                  FilledButton(
+                    onPressed: _saving
+                        ? null
+                        : () => _decide(ReviewStatus.verified),
+                    child: const Text('Approve'),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
-      ],
+        );
+        return short ? SingleChildScrollView(child: panel) : panel;
+      },
     ),
   );
 
@@ -4062,6 +4205,7 @@ class _ReviewDetailState extends State<_ReviewDetail> {
 
     return Container(
       height: 320,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppTheme.surfaceSoft,
         border: Border.all(color: AppTheme.border),
@@ -4176,6 +4320,13 @@ class _ReviewDetailState extends State<_ReviewDetail> {
               Uri.parse(url),
               key: ValueKey(url),
               params: PdfViewerParams(
+                backgroundColor: AppTheme.background,
+                margin: 12,
+                pageDropShadow: BoxShadow(
+                  color: AppTheme.navy.withValues(alpha: .15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
                 errorBannerBuilder: (_, _, _, _) =>
                     _previewFailure(storagePath, 'Could not display this PDF.'),
               ),
@@ -4492,47 +4643,33 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
                 'Create requirements so students can upload their documents.',
           );
         }
-        return GridView.builder(
-          primary: false,
-          padding: const EdgeInsets.only(bottom: 8),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 390,
-            mainAxisExtent: 228,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: definitions.length,
-          itemBuilder: (context, index) {
-            final definition = definitions[index];
-            return SectionCard(
-              title: definition.title,
-              trailing: IconButton(
-                tooltip: 'Edit requirement',
-                onPressed: () => _showEditor(context, existing: definition),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    definition.description,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Category: ${definition.category}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'Program: ${definition.program}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text('Due: ${shortDate(definition.dueDate)}'),
-                ],
-              ),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 1050
+                ? 3
+                : constraints.maxWidth >= 600
+                ? 2
+                : 1;
+            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+            return ListView(
+              padding: const EdgeInsets.only(bottom: 8),
+              children: [
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final definition in definitions)
+                      SizedBox(
+                        width: width,
+                        child: _RequirementBinCard(
+                          definition: definition,
+                          onEdit: () =>
+                              _showEditor(context, existing: definition),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             );
           },
         );
@@ -4544,13 +4681,15 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
     BuildContext context, {
     RequirementDefinition? existing,
   }) async {
+    final form = GlobalKey<FormState>();
     final title = TextEditingController(text: existing?.title);
     final description = TextEditingController(text: existing?.description);
     final instructions = TextEditingController(text: existing?.instructions);
     final category = TextEditingController(text: existing?.category);
-    final program = TextEditingController(
-      text: existing?.program ?? 'All Programs',
-    );
+    final savedProgram = existing?.program.trim() ?? '';
+    var program = savedProgram.isEmpty || savedProgram == 'All Programs'
+        ? 'All Programs'
+        : canonicalCasProgram(savedProgram);
     final pdfTemplate = PdfTemplateEditorController(
       template: existing?.pdfTemplate,
     );
@@ -4563,96 +4702,139 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
           title: Text(
             existing == null ? 'New requirement bin' : 'Edit requirement bin',
           ),
           content: SizedBox(
             width: 640,
-            child: AbsorbPointer(
-              absorbing: saving,
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: title,
-                      decoration: const InputDecoration(
-                        labelText: 'Requirement title',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: description,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Short description',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: instructions,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Submission instructions',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: category,
-                            decoration: const InputDecoration(
-                              labelText: 'Category',
-                            ),
-                          ),
+            child: Form(
+              key: form,
+              child: AbsorbPointer(
+                absorbing: saving,
+                child: SingleChildScrollView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final categoryField = TextFormField(
+                        controller: category,
+                        decoration: const InputDecoration(
+                          labelText: 'Category *',
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: program,
-                            decoration: const InputDecoration(
-                              labelText: 'Program',
-                            ),
-                          ),
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        validator: (value) => value?.trim().isNotEmpty == true
+                            ? null
+                            : 'Enter a category.',
+                      );
+                      final dateField = OutlinedButton.icon(
+                        icon: const Icon(
+                          Icons.calendar_month_outlined,
+                          size: 18,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    PdfTemplateEditor(
-                      controller: pdfTemplate,
-                      repository: repository,
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.calendar_month_outlined),
-                      label: Text('Due date: ${shortDate(dueDate)}'),
-                      onPressed: () async {
-                        final selected = await showDatePicker(
-                          context: context,
-                          firstDate: DateTime.now().subtract(
+                        label: Text('Due ${shortDate(dueDate)}'),
+                        style: OutlinedButton.styleFrom(
+                          alignment: AlignmentDirectional.centerStart,
+                          minimumSize: const Size(0, 49),
+                        ),
+                        onPressed: () async {
+                          final now = DateTime.now();
+                          final firstDate = now.subtract(
                             const Duration(days: 365),
+                          );
+                          final lastDate = now.add(const Duration(days: 3650));
+                          final selected = await showDatePicker(
+                            context: context,
+                            firstDate: dueDate.isBefore(firstDate)
+                                ? dueDate
+                                : firstDate,
+                            lastDate: dueDate.isAfter(lastDate)
+                                ? dueDate
+                                : lastDate,
+                            initialDate: dueDate,
+                          );
+                          if (selected != null && dialogContext.mounted) {
+                            setDialogState(() => dueDate = selected);
+                          }
+                        },
+                      );
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 12,
+                        children: [
+                          Text(
+                            'Requirement details',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          lastDate: DateTime.now().add(
-                            const Duration(days: 3650),
+                          TextFormField(
+                            controller: title,
+                            decoration: const InputDecoration(
+                              labelText: 'Requirement title *',
+                            ),
+                            autovalidateMode:
+                                AutovalidateMode.onUserInteraction,
+                            validator: (value) =>
+                                value?.trim().isNotEmpty == true
+                                ? null
+                                : 'Enter a requirement title.',
                           ),
-                          initialDate: dueDate,
-                        );
-                        if (selected != null) {
-                          setDialogState(() => dueDate = selected);
-                        }
-                      },
-                    ),
-                    if (saveError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          saveError!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                          if (constraints.maxWidth >= 480)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              spacing: 12,
+                              children: [
+                                Expanded(child: categoryField),
+                                Expanded(child: dateField),
+                              ],
+                            )
+                          else ...[
+                            categoryField,
+                            dateField,
+                          ],
+                          WorkspaceSelectField(
+                            label: 'Program *',
+                            options: const ['All Programs', ...casPrograms],
+                            initialValue: program,
+                            onChanged: (value) => program = value,
+                            validator: (value) => value == null
+                                ? 'Select a program or All Programs.'
+                                : null,
+                            enabled: !saving,
                           ),
-                        ),
-                      ),
-                  ],
+                          TextField(
+                            controller: description,
+                            minLines: 1,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Short description',
+                            ),
+                          ),
+                          TextField(
+                            controller: instructions,
+                            minLines: 2,
+                            maxLines: 4,
+                            decoration: const InputDecoration(
+                              labelText: 'Submission instructions',
+                            ),
+                          ),
+                          const Divider(height: 9),
+                          PdfTemplateEditor(
+                            controller: pdfTemplate,
+                            repository: repository,
+                          ),
+                          if (saveError != null)
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                saveError!,
+                                style: const TextStyle(color: AppTheme.danger),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -4666,17 +4848,12 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
               onPressed: saving
                   ? null
                   : () async {
+                      if (form.currentState?.validate() != true) return;
                       setDialogState(() {
                         saving = true;
                         saveError = null;
                       });
                       try {
-                        if (title.text.trim().isEmpty ||
-                            category.text.trim().isEmpty) {
-                          throw ArgumentError(
-                            'Requirement title and category are required.',
-                          );
-                        }
                         final template = await pdfTemplate.persist(
                           repository,
                           user,
@@ -4689,7 +4866,7 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
                           instructions: instructions.text,
                           category: category.text,
                           dueDate: dueDate,
-                          program: program.text,
+                          program: program!,
                           officialFormUrl: existing?.officialFormUrl,
                           sampleFormUrl: existing?.sampleFormUrl,
                           pdfTemplate: template,
@@ -4715,14 +4892,56 @@ class RequirementDefinitionAdminScreen extends StatelessWidget {
     );
     await Future<void>.delayed(const Duration(milliseconds: 250));
     pdfTemplate.dispose();
-    for (final controller in [
-      title,
-      description,
-      instructions,
-      category,
-      program,
-    ]) {
+    for (final controller in [title, description, instructions, category]) {
       controller.dispose();
     }
   }
+}
+
+class _RequirementBinCard extends StatelessWidget {
+  const _RequirementBinCard({required this.definition, required this.onEdit});
+
+  final RequirementDefinition definition;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 10,
+        children: [
+          Row(
+            spacing: 10,
+            children: [
+              const Icon(Icons.description_outlined, color: AppTheme.blue),
+              Expanded(
+                child: Text(
+                  definition.title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Edit ${definition.title}',
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, size: 20),
+              ),
+            ],
+          ),
+          if (definition.description.trim().isNotEmpty)
+            Text(
+              definition.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppTheme.muted),
+            ),
+          const Divider(height: 1),
+          InfoRow('Category', definition.category, labelWidth: 72),
+          InfoRow('Program', definition.program, labelWidth: 72),
+          InfoRow('Due date', shortDate(definition.dueDate), labelWidth: 72),
+        ],
+      ),
+    ),
+  );
 }

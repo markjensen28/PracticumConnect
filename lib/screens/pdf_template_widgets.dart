@@ -154,29 +154,42 @@ class _PdfTemplateEditorState extends State<PdfTemplateEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('PDF forms', style: TextStyle(fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
+        Text('PDF forms', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
         const Text(
-          'Upload a blank official PDF and a separate completed sample. Each file can be up to 5 MB.',
+          'Each PDF can be up to 5 MB.',
           style: TextStyle(color: AppTheme.muted),
         ),
-        const SizedBox(height: 10),
-        _fileRow('Blank official form', officialName, false),
-        const SizedBox(height: 10),
-        _fileRow('Completed sample (optional)', sampleName, true),
-        if (sampleName != null)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => setState(() {
-                      draft.sampleFile = null;
-                      draft.removeSample = true;
-                    }),
-              child: const Text('Remove sample'),
-            ),
-          ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final official = _fileRow(
+              'Blank official form',
+              officialName,
+              false,
+            );
+            final sample = _fileRow(
+              'Completed sample (optional)',
+              sampleName,
+              true,
+            );
+            if (constraints.maxWidth < 490) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 10,
+                children: [official, sample],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 10,
+              children: [
+                Expanded(child: official),
+                Expanded(child: sample),
+              ],
+            );
+          },
+        ),
         if (officialName != null) ...[
           const SizedBox(height: 10),
           OutlinedButton.icon(
@@ -213,29 +226,55 @@ class _PdfTemplateEditorState extends State<PdfTemplateEditor> {
     );
   }
 
-  Widget _fileRow(String label, String? name, bool sample) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      if (name != null)
-        Text(name, maxLines: 2, overflow: TextOverflow.ellipsis),
-      Wrap(
-        spacing: 8,
+  Widget _fileRow(String label, String? name, bool sample) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: AppTheme.surfaceSoft,
+      borderRadius: BorderRadius.circular(AppTheme.controlRadius),
+      border: Border.all(color: AppTheme.border),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 6,
         children: [
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _choose(sample),
-            icon: const Icon(Icons.upload_file_outlined),
-            label: Text(name == null ? 'Upload PDF' : 'Replace PDF'),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            name ?? 'No file attached',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppTheme.muted),
           ),
-          if (name != null)
-            TextButton.icon(
-              onPressed: _busy ? null : () => _preview(sample),
-              icon: const Icon(Icons.visibility_outlined),
-              label: const Text('Preview'),
-            ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _choose(sample),
+                icon: const Icon(Icons.upload_file_outlined, size: 17),
+                label: Text(name == null ? 'Upload PDF' : 'Replace PDF'),
+              ),
+              if (name != null) ...[
+                TextButton(
+                  onPressed: _busy ? null : () => _preview(sample),
+                  child: const Text('Preview'),
+                ),
+                if (sample)
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                            draft.sampleFile = null;
+                            draft.removeSample = true;
+                          }),
+                    child: const Text('Remove sample'),
+                  ),
+              ],
+            ],
+          ),
         ],
       ),
-    ],
+    ),
   );
 }
 

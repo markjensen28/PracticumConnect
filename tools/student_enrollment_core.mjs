@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
+import { canonicalCasProgram, casCollegeName } from './cas_programs.mjs';
 import { sendStudentInvitation, singleMailbox } from './school_email.mjs';
 
 const digest = (text) => createHash('sha256').update(text).digest('hex');
@@ -35,8 +36,10 @@ export function normalizeRoster(rows) {
       throw new Error(`Invalid or duplicate identity on row ${i + 1}.`);
     numbers.add(studentNumber);
     emails.add(email);
-    const academics = {};
-    for (const field of ['academicYear', 'program', 'section', 'department']) {
+    const program = canonicalCasProgram(row.program);
+    if (!program) throw new Error(`Row ${i + 1} must list one of the four CAS programs.`);
+    const academics = { program, department: casCollegeName };
+    for (const field of ['academicYear', 'section']) {
       if (row[field] != null && typeof row[field] !== 'string')
         throw new Error(`Row ${i + 1}: ${field} must be text.`);
       if (row[field]?.trim()) academics[field] = row[field].trim();
@@ -306,6 +309,7 @@ export async function activateStudent(db, auth, authorization) {
       enrollmentStatus: 'active',
       approvalStatus: 'approved',
       active: true,
+      department: casCollegeName,
       updatedAt: FieldValue.serverTimestamp(),
     });
     return true;
