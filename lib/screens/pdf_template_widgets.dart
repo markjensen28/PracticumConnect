@@ -7,6 +7,7 @@ import '../models/app_user.dart';
 import '../models/pdf_form_template.dart';
 import '../services/pdf_template_engine.dart';
 import '../services/practicum_repository.dart';
+import 'workspace_select_field.dart';
 
 /// Keep this controller with the host form, and persist only when that form saves.
 class PdfTemplateEditorController extends ChangeNotifier {
@@ -304,7 +305,15 @@ class _PdfTemplateActionsState extends State<PdfTemplateActions> {
     try {
       final template = widget.template;
       final path = sample ? template.samplePath! : template.officialPath;
-      final bytes = await widget.repository.loadPdfTemplateFile(path);
+      var bytes = await widget.repository.loadPdfTemplateFile(path);
+      if (!sample && !fill && template.hasCustomEntries) {
+        bytes = await PdfTemplateEngine.fill(
+          bytes,
+          template.fields,
+          const {},
+          templateOnly: true,
+        );
+      }
       if (!mounted) return;
       if (fill) {
         await showDialog<void>(
@@ -320,7 +329,11 @@ class _PdfTemplateActionsState extends State<PdfTemplateActions> {
         await showPdfTemplatePreview(
           context,
           bytes: bytes,
-          title: sample ? 'Completed sample' : 'Blank official form',
+          title: sample
+              ? 'Completed sample'
+              : template.hasCustomEntries
+              ? 'Official form'
+              : 'Blank official form',
           fileName: sample
               ? template.sampleName ?? 'sample.pdf'
               : template.officialName,
@@ -346,7 +359,12 @@ class _PdfTemplateActionsState extends State<PdfTemplateActions> {
         runSpacing: 8,
         children: [
           OutlinedButton.icon(
-            onPressed: _busy ? null : () => _open(),
+            onPressed:
+                _busy ||
+                    (widget.template.hasCustomEntries &&
+                        !PdfTemplateEngine.available)
+                ? null
+                : () => _open(),
             icon: const Icon(Icons.description_outlined, size: 17),
             label: const Text('Official form'),
           ),
@@ -356,7 +374,7 @@ class _PdfTemplateActionsState extends State<PdfTemplateActions> {
               icon: const Icon(Icons.visibility_outlined, size: 17),
               label: const Text('View sample form'),
             ),
-          if (widget.template.fields.isNotEmpty && PdfTemplateEngine.available)
+          if (widget.template.hasStudentFields && PdfTemplateEngine.available)
             FilledButton.icon(
               onPressed: _busy ? null : () => _open(fill: true),
               icon: const Icon(Icons.edit_note_outlined, size: 18),
@@ -365,7 +383,11 @@ class _PdfTemplateActionsState extends State<PdfTemplateActions> {
         ],
       ),
       if (widget.template.fields.isNotEmpty && !PdfTemplateEngine.available)
-        const Text('Open the web app to fill this PDF automatically.'),
+        Text(
+          widget.template.hasCustomEntries
+              ? 'Open the web app to use this configured PDF.'
+              : 'Open the web app to fill this PDF automatically.',
+        ),
       if (_busy)
         const Padding(
           padding: EdgeInsets.only(top: 8),
@@ -485,19 +507,28 @@ class _FillPdfDialogState extends State<_FillPdfDialog> {
   @override
   void initState() {
     super.initState();
-    for (final field in widget.template.fields) {
-      final key = field.label.toLowerCase().replaceAll(RegExp('[^a-z]'), '');
-      _values[field.name] = field.type == 'checkbox'
-          ? false
-          : switch (key) {
-              'studentname' || 'fullname' => widget.user.displayName,
-              'studentnumber' || 'studentid' => widget.user.studentNumber ?? '',
-              'email' || 'emailaddress' => widget.user.email,
-              'program' || 'course' => widget.user.program ?? '',
-              'academicyear' => widget.user.academicYear ?? '',
-              'phonenumber' || 'contactnumber' => widget.user.phone ?? '',
-              _ => '',
-            };
+    for (final field in widget.template.fields.where(
+      (field) => field.entry.studentEditable,
+    )) {
+      if (field.entry == PdfFieldEntry.prefilled) {
+        _values[field.name] = field.type == 'checkbox'
+            ? field.presetValue == true
+            : field.presetText;
+      } else {
+        final key = field.label.toLowerCase().replaceAll(RegExp('[^a-z]'), '');
+        _values[field.name] = field.type == 'checkbox'
+            ? false
+            : switch (key) {
+                'studentname' || 'fullname' => widget.user.displayName,
+                'studentnumber' ||
+                'studentid' => widget.user.studentNumber ?? '',
+                'email' || 'emailaddress' => widget.user.email,
+                'program' || 'course' => widget.user.program ?? '',
+                'academicyear' => widget.user.academicYear ?? '',
+                'phonenumber' || 'contactnumber' => widget.user.phone ?? '',
+                _ => '',
+              };
+      }
       if (field.type == 'choice' &&
           !field.options.contains(_values[field.name])) {
         _values[field.name] = '';
@@ -508,23 +539,29 @@ class _FillPdfDialogState extends State<_FillPdfDialog> {
   @override
   Widget build(BuildContext context) => _PdfDialogShell(
     title: 'Fill your PDF copy',
+    fitContents: true,
     child: Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
           'Enter your details, then preview and download your own copy. This does not submit the document.',
         ),
         const SizedBox(height: 14),
-        Expanded(
+        Flexible(
           child: Form(
             key: _formKey,
             child: ListView(
+              shrinkWrap: true,
               children: [
                 for (final field in widget.template.fields)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _input(field),
-                  ),
+                  if (field.entry != PdfFieldEntry.hidden)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: field.entry == PdfFieldEntry.locked
+                          ? _lockedValue(field)
+                          : _input(field),
+                    ),
               ],
             ),
           ),
@@ -554,11 +591,24 @@ class _FillPdfDialogState extends State<_FillPdfDialog> {
     ),
   );
 
+  Widget _lockedValue(PdfTemplateField field) => InputDecorator(
+    decoration: InputDecoration(
+      labelText: field.label,
+      prefixIcon: const Icon(Icons.lock_outline, size: 18),
+      helperText: 'Set by staff',
+    ),
+    child: Text(
+      field.type == 'checkbox'
+          ? (field.presetValue == true ? 'Checked' : 'Unchecked')
+          : field.presetText,
+    ),
+  );
+
   Widget _input(PdfTemplateField field) {
     final label = '${field.label}${field.required ? ' *' : ''}';
     if (field.type == 'checkbox') {
       return FormField<bool>(
-        initialValue: false,
+        initialValue: _values[field.name] == true,
         validator: (value) => field.required && value != true
             ? 'This checkbox is required.'
             : null,
@@ -657,24 +707,37 @@ class _FillPdfDialogState extends State<_FillPdfDialog> {
 }
 
 class _PdfDialogShell extends StatelessWidget {
-  const _PdfDialogShell({required this.title, required this.child});
+  const _PdfDialogShell({
+    required this.title,
+    required this.child,
+    this.fitContents = false,
+  });
   final String title;
   final Widget child;
+  final bool fitContents;
   @override
   Widget build(BuildContext context) => Dialog(
     insetPadding: const EdgeInsets.all(16),
-    child: SizedBox(
-      width: 1000,
-      height: MediaQuery.sizeOf(context).height * .9,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            Expanded(child: child),
-          ],
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .9,
+      ),
+      child: SizedBox(
+        width: 1000,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: fitContents ? MainAxisSize.min : MainAxisSize.max,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Flexible(
+                fit: fitContents ? FlexFit.loose : FlexFit.tight,
+                child: child,
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -685,255 +748,644 @@ class _PdfFieldMapper extends StatefulWidget {
   const _PdfFieldMapper({required this.bytes, required this.fields});
   final Uint8List bytes;
   final List<PdfTemplateField> fields;
+
   @override
   State<_PdfFieldMapper> createState() => _PdfFieldMapperState();
 }
 
 class _PdfFieldMapperState extends State<_PdfFieldMapper> {
+  static const _entryLabels = {
+    PdfFieldEntry.student: 'Student fills',
+    PdfFieldEntry.prefilled: 'Prefill and allow edits',
+    PdfFieldEntry.locked: 'Prefill and lock',
+    PdfFieldEntry.hidden: 'Hide and leave blank',
+  };
+
+  final _viewer = PdfViewerController();
   late final List<PdfTemplateField> _fields = List.of(widget.fields);
   late final bool _hasNativeFields = _fields.any((field) => !field.isPlaced);
+  Map<String, List<PdfFieldLocation>> _locations = const {};
+  String? _selectedName;
+  int _page = 1;
+  int _pageCount = 0;
+  bool _locating = false;
+  bool _showFieldErrors = false;
 
-  Future<void> _edit(PdfTemplateField field, {bool add = false}) async {
-    if (add && _fields.length >= 200) return;
-    final label = TextEditingController(text: add ? '' : field.label);
-    var required = field.required;
-    var multiline = field.multiline;
-    var width = field.width;
-    var height = field.height;
-    String? error;
-    final result = await showDialog<PdfTemplateField>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(add ? 'Add detail field' : 'Edit detail field'),
-          content: SizedBox(
-            width: 390,
-            child: SingleChildScrollView(
+  PdfTemplateField? get _selected =>
+      _fields.where((field) => field.name == _selectedName).firstOrNull;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_hasNativeFields) _loadLocations();
+  }
+
+  Future<void> _loadLocations() async {
+    _locating = true;
+    var locations = const <String, List<PdfFieldLocation>>{};
+    try {
+      locations = await PdfTemplateEngine.locate(widget.bytes);
+    } catch (_) {
+      // Keep the editor usable if a PDF's field positions cannot be read.
+    }
+    if (!mounted) return;
+    setState(() {
+      _locations = locations;
+      _locating = false;
+    });
+    final selected = _selected;
+    if (selected != null) _reveal(selected);
+  }
+
+  List<PdfFieldLocation> _positions(PdfTemplateField field) =>
+      field.page == null
+      ? _locations[field.name] ?? const []
+      : [
+          (
+            page: field.page!,
+            x: field.x,
+            y: field.y,
+            width: field.width,
+            height: field.height,
+          ),
+        ];
+
+  Rect _bounds(PdfFieldLocation position, Size page) => Rect.fromLTWH(
+    position.x * page.width,
+    position.y * page.height,
+    position.width * page.width,
+    position.height * page.height,
+  );
+
+  void _select(PdfTemplateField field, {bool reveal = true}) {
+    setState(() => _selectedName = field.name);
+    if (reveal) _reveal(field);
+  }
+
+  void _reveal(PdfTemplateField field) {
+    if (_pageCount == 0 || !_viewer.isReady) return;
+    final positions = _positions(field);
+    final location =
+        positions.where((position) => position.page == _page).firstOrNull ??
+        positions.firstOrNull;
+    if (location == null || location.page > _pageCount) return;
+    final page = _viewer.layout.pageLayouts[location.page - 1];
+    final target = _bounds(location, page.size).shift(page.topLeft);
+    final visible = _viewer.visibleRect.deflate(8 / _viewer.currentZoom);
+    if (visible.contains(target.topLeft) &&
+        visible.contains(target.bottomRight)) {
+      return;
+    }
+    _viewer.goTo(
+      _viewer.calcMatrixFor(target.center, zoom: _viewer.currentZoom),
+    );
+  }
+
+  void _update(PdfTemplateField field) {
+    final index = _fields.indexWhere((item) => item.name == field.name);
+    setState(() => _fields[index] = field);
+  }
+
+  void _place(PdfPage page, Rect rect, Offset point) {
+    if (page.rotation != PdfPageRotation.none) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Rotate the PDF upright before placing fields.'),
+        ),
+      );
+      return;
+    }
+    final x = (point.dx / rect.width).clamp(0.0, .95);
+    final y = (point.dy / rect.height).clamp(0.0, .96);
+    final field = PdfTemplateField(
+      name: 'sip_${DateTime.now().microsecondsSinceEpoch}',
+      label: '',
+      page: page.pageNumber,
+      x: x,
+      y: y,
+      width: (1 - x).clamp(.02, .35),
+    );
+    setState(() {
+      _fields.add(field);
+      _selectedName = field.name;
+    });
+  }
+
+  void _save() {
+    final invalid = _fields
+        .where(
+          (field) => field.label.trim().isEmpty || field.presetError != null,
+        )
+        .firstOrNull;
+    if (invalid != null) {
+      setState(() {
+        _showFieldErrors = true;
+        _selectedName = invalid.name;
+      });
+      _reveal(invalid);
+      return;
+    }
+    Navigator.pop(context, [
+      for (final field in _fields) field.copyWith(label: field.label.trim()),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Dialog(
+      insetPadding: const EdgeInsets.all(12),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 1360,
+        height: 940,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 4,
                 children: [
-                  TextField(
-                    controller: label,
-                    autofocus: true,
-                    maxLength: 100,
-                    decoration: InputDecoration(
-                      labelText: 'Detail label',
-                      hintText: 'For example, Student name',
-                      errorText: error,
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      'Configure PDF fields',
+                      style: theme.textTheme.titleLarge,
                     ),
                   ),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Required'),
-                    value: required,
-                    onChanged: (value) =>
-                        setDialogState(() => required = value ?? false),
+                  Text(
+                    _hasNativeFields
+                        ? 'Select a field in the list or on the PDF to see where it appears and edit its label.'
+                        : 'Tap a blank space on the PDF to place a text field.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.muted,
+                    ),
                   ),
-                  if (field.type == 'text')
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Multiple lines'),
-                      value: multiline,
-                      onChanged: (value) =>
-                          setDialogState(() => multiline = value ?? false),
-                    ),
-                  if (field.isPlaced) ...[
-                    Text('Width: ${(width * 100).round()}% of page'),
-                    Slider(
-                      value: width,
-                      min: .02,
-                      max: (1 - field.x).clamp(.02, 1),
-                      onChanged: (value) => setDialogState(() => width = value),
-                    ),
-                    Text('Height: ${(height * 100).round()}% of page'),
-                    Slider(
-                      value: height,
-                      min: .015,
-                      max: (1 - field.y).clamp(.015, .4),
-                      onChanged: (value) =>
-                          setDialogState(() => height = value),
-                    ),
-                  ],
                 ],
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (label.text.trim().isEmpty) {
-                  setDialogState(
-                    () => error = 'Enter a label for this detail.',
+            const Divider(height: 1),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final preview = _preview();
+                  if (constraints.maxWidth < 790) {
+                    final showMorePreview =
+                        _selected?.isPlaced == false &&
+                        constraints.maxHeight > 500;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(flex: showMorePreview ? 7 : 5, child: preview),
+                        const Divider(height: 1),
+                        Expanded(flex: 6, child: _fieldPanel(compact: true)),
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: preview),
+                      const VerticalDivider(width: 1),
+                      SizedBox(width: 376, child: _fieldPanel(compact: false)),
+                    ],
                   );
-                  return;
-                }
-                Navigator.pop(
-                  context,
-                  PdfTemplateField(
-                    name: field.name,
-                    label: label.text.trim(),
-                    type: field.type,
-                    required: required,
-                    multiline: multiline,
-                    options: field.options,
-                    maxLength: field.maxLength,
-                    page: field.page,
-                    x: field.x,
-                    y: field.y,
-                    width: width,
-                    height: height,
+                },
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
                   ),
-                );
-              },
-              child: const Text('Apply'),
+                  FilledButton(
+                    onPressed: _save,
+                    child: const Text('Use these fields'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
-    // Dispose after the dialog route has finished animating out.
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    label.dispose();
-    if (result != null && mounted) {
-      setState(() {
-        if (add) {
-          _fields.add(result);
-        } else {
-          _fields[_fields.indexOf(field)] = result;
-        }
-      });
-    }
   }
 
-  @override
-  Widget build(BuildContext context) => _PdfDialogShell(
-    title: 'Configure PDF details',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          _hasNativeFields
-              ? 'Review the detected fields and their labels.'
-              : 'Tap a blank space on the PDF to place a text field. Tap a blue field to edit its label or size.',
+  Widget _preview() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'PDF preview',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Previous page',
+              onPressed: _page > 1
+                  ? () => _viewer.goToPage(pageNumber: _page - 1)
+                  : null,
+              icon: const Icon(Icons.chevron_left),
+            ),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _pageCount == 0 ? 'Page' : 'Page $_page of $_pageCount',
+              ),
+            ),
+            IconButton(
+              tooltip: 'Next page',
+              onPressed: _page < _pageCount
+                  ? () => _viewer.goToPage(pageNumber: _page + 1)
+                  : null,
+              icon: const Icon(Icons.chevron_right),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: PdfViewer.data(
-            widget.bytes,
-            sourceName: 'field-mapping.pdf',
-            params: PdfViewerParams(
-              pageOverlaysBuilder: (context, rect, page) => [
-                if (!_hasNativeFields)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapUp: (details) {
-                        if (page.rotation != PdfPageRotation.none) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Rotate the original PDF upright before adding fields.',
-                              ),
-                            ),
-                          );
-                          return;
-                        }
-                        final x = (details.localPosition.dx / rect.width).clamp(
-                          0.0,
-                          .95,
-                        );
-                        final y = (details.localPosition.dy / rect.height)
-                            .clamp(0.0, .96);
-                        _edit(
-                          PdfTemplateField(
-                            name:
-                                'sip_${DateTime.now().microsecondsSinceEpoch}',
-                            label: '',
-                            page: page.pageNumber,
-                            x: x,
-                            y: y,
-                            width: (1 - x).clamp(.02, .35),
-                            height: .035,
-                          ),
-                          add: true,
-                        );
-                      },
-                    ),
-                  ),
-                for (final field in _fields.where(
-                  (field) => field.page == page.pageNumber,
-                ))
-                  Positioned(
-                    left: field.x * rect.width,
-                    top: field.y * rect.height,
-                    width: field.width * rect.width,
-                    height: field.height * rect.height,
-                    child: GestureDetector(
-                      onTap: () => _edit(field),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceBlue,
-                          border: Border.all(color: AppTheme.blue),
-                        ),
-                        child: Text(
-                          field.label,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.deepBlue,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+      ),
+      const Divider(height: 1),
+      Expanded(
+        child: PdfViewer.data(
+          widget.bytes,
+          sourceName: 'field-mapping.pdf',
+          controller: _viewer,
+          params: PdfViewerParams(
+            backgroundColor: AppTheme.background,
+            margin: 12,
+            onViewerReady: (document, controller) {
+              if (!mounted) return;
+              setState(() => _pageCount = document.pages.length);
+              final selected = _selected;
+              if (selected != null) _reveal(selected);
+            },
+            onPageChanged: (page) {
+              if (mounted && page != null && page != _page) {
+                setState(() => _page = page);
+              }
+            },
+            pageOverlaysBuilder: _pageOverlays,
+          ),
+        ),
+      ),
+    ],
+  );
+
+  List<Widget> _pageOverlays(BuildContext context, Rect rect, PdfPage page) {
+    final selected = _selected;
+    return [
+      if (!_hasNativeFields && _fields.length < 200)
+        Positioned.fill(
+          child: MouseRegion(
+            cursor: SystemMouseCursors.precise,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) => _place(page, rect, details.localPosition),
             ),
           ),
         ),
-        SizedBox(
-          height: 100,
-          child: ListView(
+      for (final field in _fields.where((field) => field != selected))
+        ..._fieldMarkers(field, page, rect.size),
+      if (selected != null) ..._fieldMarkers(selected, page, rect.size),
+    ];
+  }
+
+  Iterable<Widget> _fieldMarkers(
+    PdfTemplateField field,
+    PdfPage page,
+    Size pageSize,
+  ) sync* {
+    final selected = field.name == _selectedName;
+    for (final position in _positions(field)) {
+      if (position.page != page.pageNumber) continue;
+      yield Positioned.fromRect(
+        rect: _bounds(position, pageSize),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            excludeFromSemantics: true,
+            onTap: () => _select(field, reveal: false),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppTheme.blue.withValues(alpha: selected ? .22 : .07),
+                border: Border.all(
+                  color: selected
+                      ? AppTheme.blue
+                      : AppTheme.deepBlue.withValues(alpha: .50),
+                  width: selected ? 2 : 1,
+                ),
+                boxShadow: selected
+                    ? const [BoxShadow(color: Colors.white, spreadRadius: 1)]
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _fieldPanel({required bool compact}) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _fieldPanelContents(compact, constraints.maxHeight),
+  );
+
+  Widget _fieldPanelContents(bool compact, double height) {
+    final selected = _selected;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
             children: [
-              for (final field in _fields)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('${field.label}${field.required ? ' *' : ''}'),
-                  subtitle: Text(
-                    field.isPlaced ? 'Page ${field.page}' : field.type,
+              if (compact && selected != null)
+                TextButton.icon(
+                  onPressed: () => setState(() => _selectedName = null),
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text('All fields'),
+                )
+              else
+                Expanded(
+                  child: Text(
+                    'Fields (${_fields.length})',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  onTap: () => _edit(field),
-                  trailing: field.isPlaced
-                      ? IconButton(
-                          tooltip: 'Remove field',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () =>
-                              setState(() => _fields.remove(field)),
-                        )
-                      : const Icon(Icons.edit_outlined),
                 ),
             ],
           ),
         ),
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: 8,
-          children: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, _fields),
-              child: const Text('Use these fields'),
+        const Divider(height: 1),
+        if (!compact || selected == null)
+          Expanded(
+            child: _fields.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'No fields yet. Select a blank space on the PDF to add one.',
+                      style: TextStyle(color: AppTheme.muted),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: _fields.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                    itemBuilder: (context, index) => _fieldRow(_fields[index]),
+                  ),
+          ),
+        if (selected != null)
+          if (compact)
+            Expanded(child: _fieldSettings(selected))
+          else ...[
+            const Divider(height: 1),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: height * .55),
+              child: _fieldSettings(selected),
             ),
           ],
+      ],
+    );
+  }
+
+  Widget _fieldRow(PdfTemplateField field) {
+    final positions = _positions(field);
+    final type = switch (field.type) {
+      'checkbox' => 'Checkbox',
+      'choice' => 'Choice',
+      _ => 'Text',
+    };
+    final location = _locating && !field.isPlaced
+        ? 'Locating'
+        : positions.isEmpty
+        ? 'Location unavailable'
+        : positions.length == 1
+        ? 'Page ${positions.first.page}'
+        : '${positions.length} locations';
+    final access = switch (field.entry) {
+      PdfFieldEntry.student => null,
+      PdfFieldEntry.prefilled => 'Prefilled',
+      PdfFieldEntry.locked => 'Locked',
+      PdfFieldEntry.hidden => 'Hidden',
+    };
+    return ListTile(
+      selected: field.name == _selectedName,
+      selectedTileColor: AppTheme.surfaceBlue,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      title: Text(
+        field.label.trim().isEmpty ? 'Unnamed field' : field.label,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        [type, location, if (access != null) access].join('  •  '),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: () => _select(field),
+    );
+  }
+
+  Widget _fieldSettings(PdfTemplateField field) => ColoredBox(
+    color: AppTheme.surfaceSoft,
+    child: SingleChildScrollView(
+      key: ValueKey(field.name),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 8,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Field settings',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Locate field on PDF',
+                onPressed: _positions(field).isEmpty
+                    ? null
+                    : () => _reveal(field),
+                icon: const Icon(Icons.my_location_outlined, size: 20),
+              ),
+              if (field.isPlaced)
+                IconButton(
+                  tooltip: 'Remove field',
+                  onPressed: () => setState(() {
+                    _fields.remove(field);
+                    _selectedName = null;
+                  }),
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                ),
+            ],
+          ),
+          TextFormField(
+            initialValue: field.label,
+            maxLength: 100,
+            decoration: InputDecoration(
+              labelText: 'Field label',
+              hintText: 'For example, Student name',
+              counterText: '',
+              errorText: _showFieldErrors && field.label.trim().isEmpty
+                  ? 'Enter a field label.'
+                  : null,
+            ),
+            onChanged: (value) => _update(field.copyWith(label: value)),
+          ),
+          WorkspaceSelectField<PdfFieldEntry>(
+            label: 'Student access',
+            initialValue: field.entry,
+            options: PdfFieldEntry.values,
+            optionLabel: (entry) => _entryLabels[entry]!,
+            onChanged: (entry) => _update(field.copyWith(entry: entry)),
+          ),
+          if (field.entry.usesPreset) _presetInput(field),
+          if (field.entry == PdfFieldEntry.hidden)
+            const Text(
+              'Students won’t see this field. It stays blank in their PDF copy.',
+              style: TextStyle(color: AppTheme.muted),
+            ),
+          Wrap(
+            spacing: 16,
+            children: [
+              if (field.entry.studentEditable)
+                _fieldOption(
+                  'Required',
+                  field.required,
+                  (value) => _update(field.copyWith(required: value)),
+                ),
+              if (field.type == 'text' && field.entry != PdfFieldEntry.hidden)
+                _fieldOption(
+                  'Multiple lines',
+                  field.multiline,
+                  (value) => _update(field.copyWith(multiline: value)),
+                ),
+            ],
+          ),
+          if (field.isPlaced && field.entry != PdfFieldEntry.hidden)
+            Row(
+              children: [
+                Expanded(
+                  child: _sizeSlider(
+                    'Width',
+                    field.width,
+                    .02,
+                    (1 - field.x).clamp(.02, 1),
+                    (value) => _update(field.copyWith(width: value)),
+                  ),
+                ),
+                Expanded(
+                  child: _sizeSlider(
+                    'Height',
+                    field.height,
+                    .015,
+                    (1 - field.y).clamp(.015, .4),
+                    (value) => _update(field.copyWith(height: value)),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _presetInput(PdfTemplateField field) {
+    final error = _showFieldErrors ? field.presetError : null;
+    if (field.type == 'text') {
+      return TextFormField(
+        initialValue: field.presetText,
+        maxLength: field.maxLength ?? 4000,
+        minLines: field.multiline ? 2 : 1,
+        maxLines: field.multiline ? 4 : 1,
+        decoration: InputDecoration(
+          labelText: 'Prefilled value',
+          counterText: '',
+          errorText: error,
         ),
+        onChanged: (value) => _update(field.copyWith(presetValue: value)),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (field.type == 'checkbox')
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: _fieldOption(
+              'Prefill as checked',
+              field.presetValue == true,
+              (value) => _update(field.copyWith(presetValue: value)),
+            ),
+          )
+        else
+          WorkspaceSelectField<String>(
+            label: 'Prefilled option',
+            hint: 'Select an option',
+            initialValue: field.presetText,
+            options: field.options,
+            onChanged: (value) => _update(field.copyWith(presetValue: value)),
+          ),
+        if (error != null)
+          Text(
+            error,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+      ],
+    );
+  }
+
+  Widget _fieldOption(
+    String label,
+    bool checked,
+    ValueChanged<bool> onChanged,
+  ) => InkWell(
+    canRequestFocus: false,
+    excludeFromSemantics: true,
+    onTap: () => onChanged(!checked),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          semanticLabel: label,
+          value: checked,
+          onChanged: (value) => onChanged(value!),
+        ),
+        ExcludeSemantics(child: Text(label)),
       ],
     ),
+  );
+
+  Widget _sizeSlider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) => Column(
+    children: [
+      Text('$label ${(value * 100).round()}%'),
+      Slider(
+        value: value.clamp(min, max),
+        min: min,
+        max: max,
+        onChanged: onChanged,
+        semanticFormatterCallback: (value) =>
+            '$label ${(value * 100).round()} percent',
+      ),
+    ],
   );
 }

@@ -56,3 +56,12 @@ export function programAppliesTo(targetProgram, studentProgram) {
     ? canonicalTarget === canonicalCasProgram(studentProgram)
     : typeof studentProgram === 'string' && target === studentProgram.trim();
 }
+
+export function coordinatorProgram(coordinator) {
+  return canonicalCasProgram(coordinator?.program) ?? canonicalCasProgram(coordinator?.department);
+}
+
+export function sameCoordinatorProgram(coordinator, student) {
+  const program = coordinatorProgram(coordinator);
+  return program !== null && program === canonicalCasProgram(student?.program);
+}

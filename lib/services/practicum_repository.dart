@@ -20,6 +20,13 @@ import '../models/pdf_form_template.dart';
 
 import 'notification_schedule.dart';
 
+typedef _SetRecord =
+    void Function(
+      DocumentReference<Map<String, dynamic>> reference,
+      Map<String, dynamic> data, [
+      SetOptions? options,
+    ]);
+
 class PracticumRepository {
   PracticumRepository({FirebaseFirestore? firestore}) : _firestore = firestore;
 
@@ -68,11 +75,16 @@ class PracticumRepository {
     } else if (user.role == UserRole.coordinator) {
       query = query.where('coordinatorId', isEqualTo: user.uid);
     }
-    return query.snapshots().map((snapshot) {
+    final records = query.snapshots().map((snapshot) {
       final records = snapshot.docs.map(RequirementRecord.fromDoc).toList();
       records.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
       return records;
     });
+    return _scopeCoordinatorRecords(
+      user,
+      records,
+      (record) => record.studentId,
+    );
   }
 
   Stream<List<DtrRecord>> watchDtr(AppUser user) {
@@ -82,7 +94,7 @@ class PracticumRepository {
     } else if (user.role == UserRole.coordinator) {
       query = query.where('coordinatorId', isEqualTo: user.uid);
     }
-    return query.snapshots().map((snapshot) {
+    final records = query.snapshots().map((snapshot) {
       final records = snapshot.docs
           .map(DtrRecord.fromDoc)
           .where((record) => !record.archived)
@@ -90,6 +102,11 @@ class PracticumRepository {
       records.sort((a, b) => b.date.compareTo(a.date));
       return records;
     });
+    return _scopeCoordinatorRecords(
+      user,
+      records,
+      (record) => record.studentId,
+    );
   }
 
   Stream<int> watchReminderHours(AppUser user) =>
@@ -300,6 +317,7 @@ class PracticumRepository {
   Stream<List<AppUser>> _watchStudents(
     AppUser actor, {
     bool includePending = false,
+    bool includeInactive = false,
   }) {
     Query<Map<String, dynamic>> query = _db
         .collection('users')
@@ -314,8 +332,14 @@ class PracticumRepository {
           .map((doc) => AppUser.fromMap(doc.id, doc.data()))
           .where(
             (student) =>
+                includeInactive ||
                 student.active ||
                 (includePending && student.enrollmentStatus == 'pending'),
+          )
+          .where(
+            (student) =>
+                actor.role != UserRole.coordinator ||
+                actor.canCoordinate(student),
           )
           .toList();
       users.sort(
@@ -323,6 +347,43 @@ class PracticumRepository {
             a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
       );
       return users;
+    });
+  }
+
+  Stream<List<T>> _scopeCoordinatorRecords<T>(
+    AppUser actor,
+    Stream<List<T>> source,
+    String Function(T) studentId,
+  ) {
+    if (actor.role != UserRole.coordinator) return source;
+    return Stream.multi((controller) {
+      Set<String>? studentIds;
+      List<T>? records;
+      void publish() {
+        final ids = studentIds;
+        final currentRecords = records;
+        if (ids != null && currentRecords != null) {
+          controller.addSync(
+            currentRecords
+                .where((record) => ids.contains(studentId(record)))
+                .toList(),
+          );
+        }
+      }
+
+      final roster = _watchStudents(actor, includeInactive: true).listen((
+        students,
+      ) {
+        studentIds = students.map((student) => student.uid).toSet();
+        publish();
+      }, onError: controller.addErrorSync);
+      final updates = source.listen((value) {
+        records = value;
+        publish();
+      }, onError: controller.addErrorSync);
+      controller.onCancel = () async {
+        await Future.wait([roster.cancel(), updates.cancel()]);
+      };
     });
   }
 
@@ -450,11 +511,16 @@ class PracticumRepository {
     } else if (actor.role == UserRole.student) {
       query = query.where(FieldPath.documentId, isEqualTo: actor.uid);
     }
-    return query.snapshots().map(
+    final profiles = query.snapshots().map(
       (snapshot) => snapshot.docs
           .map(InternshipProfileRecord.fromDoc)
           .where((profile) => !profile.archived)
           .toList(),
+    );
+    return _scopeCoordinatorRecords(
+      actor,
+      profiles,
+      (profile) => profile.studentId,
     );
   }
 
@@ -501,7 +567,7 @@ class PracticumRepository {
     } else if (actor.role == UserRole.student) {
       query = query.where('studentId', isEqualTo: actor.uid);
     }
-    return query.snapshots().map((snapshot) {
+    final records = query.snapshots().map((snapshot) {
       final records = snapshot.docs
           .map(SupervisorEvaluationRecord.fromDoc)
           .where((record) => !record.archived)
@@ -509,6 +575,11 @@ class PracticumRepository {
       records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return records;
     });
+    return _scopeCoordinatorRecords(
+      actor,
+      records,
+      (record) => record.studentId,
+    );
   }
 
   Stream<List<SupervisorEvaluationRecord>> watchEvaluations() =>
@@ -635,10 +706,12 @@ class PracticumRepository {
       'supervisor_evaluations',
     );
 
-    // Program Coordinators may retrieve only records belonging to interns who
-    // were assigned to them. CAS College Coordinator / SIP Admin can retrieve
-    // college-wide archived records.
+    Set<String>? scopedStudents;
     if (actor.role == UserRole.coordinator) {
+      scopedStudents = (await _watchStudents(
+        actor,
+        includeInactive: true,
+      ).first).map((student) => student.uid).toSet();
       requirementQuery = requirementQuery.where(
         'coordinatorId',
         isEqualTo: actor.uid,
@@ -649,6 +722,8 @@ class PracticumRepository {
         isEqualTo: actor.uid,
       );
     }
+    bool inScope(String studentId) =>
+        scopedStudents?.contains(studentId) ?? true;
 
     final snapshots = await Future.wait([
       requirementQuery.get(),
@@ -659,19 +734,28 @@ class PracticumRepository {
     final requirements = snapshots[0].docs
         .map(RequirementRecord.fromDoc)
         .where(
-          (record) => record.archived && record.academicYear == academicYear,
+          (record) =>
+              record.archived &&
+              record.academicYear == academicYear &&
+              inScope(record.studentId),
         )
         .toList();
     final dtr = snapshots[1].docs
         .map(DtrRecord.fromDoc)
         .where(
-          (record) => record.archived && record.academicYear == academicYear,
+          (record) =>
+              record.archived &&
+              record.academicYear == academicYear &&
+              inScope(record.studentId),
         )
         .toList();
     final evaluations = snapshots[2].docs
         .map(SupervisorEvaluationRecord.fromDoc)
         .where(
-          (record) => record.archived && record.academicYear == academicYear,
+          (record) =>
+              record.archived &&
+              record.academicYear == academicYear &&
+              inScope(record.studentId),
         )
         .toList();
 
@@ -778,7 +862,7 @@ class PracticumRepository {
     });
 
     _queueTargetedNotification(
-      batch: batch,
+      set: batch.set,
       actor: reviewer,
       targetUserId: studentId,
       targetRole: UserRole.student.value,
@@ -805,7 +889,7 @@ class PracticumRepository {
       reviewStatus: status,
     );
     _queueLog(
-      batch,
+      batch.set,
       reviewer,
       'Changed requirement $requirementId to ${status.label}',
     );
@@ -1041,7 +1125,7 @@ class PracticumRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     _queueTargetedNotification(
-      batch: batch,
+      set: batch.set,
       actor: reviewer,
       targetUserId: studentId,
       targetRole: UserRole.student.value,
@@ -1065,7 +1149,7 @@ class PracticumRepository {
       reviewId: recordId,
       reviewStatus: status,
     );
-    _queueLog(batch, reviewer, 'Changed DTR $recordId to ${status.label}');
+    _queueLog(batch.set, reviewer, 'Changed DTR $recordId to ${status.label}');
     await batch.commit();
   }
 
@@ -1201,95 +1285,105 @@ class PracticumRepository {
       throw ArgumentError('Select at least one scheduled work day.');
     }
 
-    final coordinatorId =
-        student.coordinatorId ??
-        (actor.role == UserRole.coordinator
-            ? actor.uid
-            : profile.coordinatorId);
+    final users = _db.collection('users');
+    final studentRef = users.doc(student.uid);
+    final profileRef = _db.collection('internship_profiles').doc(student.uid);
+    await _db.runTransaction((transaction) async {
+      final savedUser = await transaction.get(studentRef);
+      final data = savedUser.data();
+      if (data == null || data['role'] != 'student') {
+        throw StateError('The student intern was not found.');
+      }
+      final savedProfile = await transaction.get(profileRef);
+      if (savedProfile.data()?['archived'] == true) {
+        throw StateError('Archived internship profiles are read-only.');
+      }
+      final coordinatorId = data['coordinatorId'] as String?;
+      final currentProgram = canonicalCasProgram(data['program'] as String?);
+      if (actor.role == UserRole.coordinator &&
+          (coordinatorId != actor.uid || currentProgram != selectedProgram)) {
+        throw StateError(
+          'Only the college administrator can change a student program.',
+        );
+      }
+      if (coordinatorId != null && currentProgram != selectedProgram) {
+        final coordinator = (await transaction.get(
+          users.doc(coordinatorId),
+        )).data();
+        if (coordinator == null ||
+            coordinator['role'] != 'coordinator' ||
+            AppUser.fromMap(coordinatorId, coordinator).casProgram !=
+                selectedProgram) {
+          throw StateError(
+            'Remove the current Program Coordinator assignment before changing the program.',
+          );
+        }
+      }
+      final profileChanges = <String, dynamic>{
+        'placementStatus': profile.placementStatus,
+        'companyName': profile.companyName.trim(),
+        'department': profile.department.trim(),
+        'position': profile.position.trim(),
+        'startDate': profile.startDate == null
+            ? null
+            : Timestamp.fromDate(profile.startDate!),
+        'endDate': profile.endDate == null
+            ? null
+            : Timestamp.fromDate(profile.endDate!),
+        'shiftStartMinutes': profile.shiftStartMinutes,
+        'shiftEndMinutes': profile.shiftEndMinutes,
+        'workDays': profile.workDays,
+        'timeZone': profile.timeZone,
+        'requiredHours': profile.requiredHours,
+        'supervisorName': profile.supervisorName.trim(),
+        'supervisorEmail': profile.supervisorEmail.trim(),
+        'supervisorPhone': profile.supervisorPhone.trim(),
+        'coordinatorRemarks': profile.coordinatorRemarks.trim(),
+        'coordinatorId': coordinatorId,
+        'academicYear': academicYear.trim(),
+        'updatedBy': actor.uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      final userChanges = <String, dynamic>{
+        'program': selectedProgram,
+        'department': casCollegeName,
+        if (section != null) 'section': section.trim(),
+        'yearLevel': selectedYearLevel,
+        'academicYear': academicYear.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
 
-    final batch = _db.batch();
-    final profileChanges = <String, dynamic>{
-      'status': profile.status,
-      'placementStatus': profile.placementStatus,
-      'companyName': profile.companyName.trim(),
-      'department': profile.department.trim(),
-      'position': profile.position.trim(),
-      'startDate': profile.startDate == null
-          ? null
-          : Timestamp.fromDate(profile.startDate!),
-      'endDate': profile.endDate == null
-          ? null
-          : Timestamp.fromDate(profile.endDate!),
-      'shiftStartMinutes': profile.shiftStartMinutes,
-      'shiftEndMinutes': profile.shiftEndMinutes,
-      'workDays': profile.workDays,
-      'timeZone': profile.timeZone,
-      'requiredHours': profile.requiredHours,
-      'supervisorName': profile.supervisorName.trim(),
-      'supervisorEmail': profile.supervisorEmail.trim(),
-      'supervisorPhone': profile.supervisorPhone.trim(),
-      'coordinatorRemarks': profile.coordinatorRemarks.trim(),
-      'coordinatorId': coordinatorId,
-      'academicYear': academicYear.trim(),
-      'archived': profile.archived,
-      'updatedBy': actor.uid,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-    final userChanges = <String, dynamic>{
-      'program': selectedProgram,
-      'department': casCollegeName,
-      if (section != null) 'section': section.trim(),
-      'yearLevel': selectedYearLevel,
-      'academicYear': academicYear.trim(),
-      if (actor.role == UserRole.admin) 'coordinatorId': coordinatorId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
+      bool matches(Map<String, dynamic> changes, Map<String, dynamic>? saved) =>
+          saved != null &&
+          changes.entries.every((entry) {
+            if (['status', 'updatedAt', 'updatedBy'].contains(entry.key)) {
+              return true;
+            }
+            final value = saved[entry.key];
+            return entry.value is List && value is List
+                ? listEquals(entry.value as List, value)
+                : entry.value == value;
+          });
+      final unchanged =
+          matches(profileChanges, savedProfile.data()) &&
+          matches(userChanges, data);
+      await _syncInternshipStage(
+        student.uid,
+        actor: actor,
+        transaction: transaction,
+        profileChanges: profileChanges,
+        userChanges: userChanges,
+      );
+      if (unchanged) return;
 
-    // Retrying an already committed save must not publish another audit event.
-    final savedProfile = await _db
-        .collection('internship_profiles')
-        .doc(student.uid)
-        .get();
-    if (savedProfile.data()?['archived'] == true) {
-      throw StateError('Archived internship profiles are read-only.');
-    }
-    final savedUser = await _db.collection('users').doc(student.uid).get();
-    bool matches(Map<String, dynamic> changes, Map<String, dynamic>? saved) =>
-        saved != null &&
-        changes.entries.every((entry) {
-          if (['status', 'updatedAt', 'updatedBy'].contains(entry.key)) {
-            return true;
-          }
-          final value = saved[entry.key];
-          return entry.value is List && value is List
-              ? listEquals(entry.value as List, value)
-              : entry.value == value;
-        });
-    if (matches(profileChanges, savedProfile.data()) &&
-        matches(userChanges, savedUser.data())) {
-      await _syncInternshipStage(student.uid, actor: actor);
-      return;
-    }
-
-    batch.set(
-      _db.collection('internship_profiles').doc(student.uid),
-      profileChanges,
-      SetOptions(merge: true),
-    );
-    batch.update(_db.collection('users').doc(student.uid), userChanges);
-    await _syncInternshipStage(
-      student.uid,
-      actor: actor,
-      batch: batch,
-      profileChanges: profileChanges,
-      userChanges: userChanges,
-    );
-    _queueLog(
-      batch,
-      actor,
-      'Updated internship profile for ${student.displayName}',
-    );
-    await batch.commit();
+      transaction.set(profileRef, profileChanges, SetOptions(merge: true));
+      transaction.update(studentRef, userChanges);
+      _queueLog(
+        transaction.set,
+        actor,
+        'Updated internship profile for ${student.displayName}',
+      );
+    });
   }
 
   Future<void> clockIn({
@@ -1473,6 +1567,10 @@ class PracticumRepository {
     if (fields.length > 200 ||
         fields.map((field) => field.name).toSet().length != fields.length) {
       throw ArgumentError('Use at most 200 fields with unique names.');
+    }
+    for (final field in fields) {
+      final issue = field.presetError;
+      if (issue != null) throw ArgumentError('${field.label} — $issue');
     }
     for (final file in [officialFile, sampleFile].whereType<PlatformFile>()) {
       validateTemplatePdf(file.name, await file.readAsBytes());
@@ -1818,40 +1916,61 @@ class PracticumRepository {
       throw ArgumentError('The selected account is not a Program Coordinator.');
     }
 
+    final users = _db.collection('users');
+    final studentRef = users.doc(student.uid);
     final placement = _db.collection('internship_profiles').doc(student.uid);
-    await _db.runTransaction((transaction) async {
+    final assigned = await _db.runTransaction((transaction) async {
+      final currentStudent = (await transaction.get(studentRef)).data();
+      if (currentStudent == null || currentStudent['role'] != 'student') {
+        throw StateError('The student intern was not found.');
+      }
+      AppUser? currentCoordinator;
+      if (coordinator != null) {
+        final data = (await transaction.get(users.doc(coordinator.uid))).data();
+        if (data == null ||
+            data['role'] != 'coordinator' ||
+            data['approvalStatus'] != 'approved' ||
+            data['active'] != true) {
+          throw StateError('The selected Program Coordinator is unavailable.');
+        }
+        currentCoordinator = AppUser.fromMap(coordinator.uid, data);
+        final studentProfile = AppUser.fromMap(student.uid, currentStudent);
+        if (!currentCoordinator.canCoordinate(studentProfile)) {
+          throw StateError(
+            'Choose an active, approved coordinator from the student’s CAS program.',
+          );
+        }
+      }
       final profile = await transaction.get(placement);
-      transaction.update(_db.collection('users').doc(student.uid), {
-        'coordinatorId': coordinator?.uid,
-        'coordinatorName': coordinator?.displayName,
+      transaction.update(studentRef, {
+        'coordinatorId': currentCoordinator?.uid,
+        'coordinatorName': currentCoordinator?.displayName,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (profile.data()?['archived'] != true) {
         transaction.set(placement, {
-          'coordinatorId': coordinator?.uid,
+          'coordinatorId': currentCoordinator?.uid,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
+      return currentCoordinator;
     });
 
     // Keep existing records aligned with the newly assigned coordinator so
     // Program Coordinator queries and security rules remain consistent.
-    await _backfillCoordinatorAssignment(
-      studentId: student.uid,
-      coordinatorId: coordinator?.uid,
-    );
+    await _backfillCoordinatorAssignment(student.uid);
 
     await _log(
       actor,
-      coordinator == null
+      assigned == null
           ? 'Removed Program Coordinator assignment for ${student.displayName}'
-          : 'Assigned ${student.displayName} to ${coordinator.displayName}',
+          : 'Assigned ${student.displayName} to ${assigned.displayName}',
     );
 
-    if (coordinator != null) {
+    if (assigned != null) {
       await _createTargetedNotification(
         actor: actor,
-        targetUserId: coordinator.uid,
+        targetUserId: assigned.uid,
         targetRole: UserRole.coordinator.value,
         title: 'New intern assigned',
         message:
@@ -1864,9 +1983,9 @@ class PracticumRepository {
         targetUserId: student.uid,
         targetRole: UserRole.student.value,
         title: 'Program Coordinator assigned',
-        message: '${coordinator.displayName} is now your Program Coordinator.',
+        message: '${assigned.displayName} is now your Program Coordinator.',
         type: 'assignment',
-        relatedId: coordinator.uid,
+        relatedId: assigned.uid,
       );
     }
   }
@@ -1875,6 +1994,7 @@ class PracticumRepository {
     required AppUser actor,
     required AppUser target,
     required bool approve,
+    String? program,
   }) async {
     if (actor.role != UserRole.admin) {
       throw StateError(
@@ -1886,6 +2006,46 @@ class PracticumRepository {
       throw StateError('This coordinator request is no longer pending.');
     }
 
+    await _submitCoordinatorAction(
+      actor: actor,
+      target: target,
+      action: approve ? 'approve' : 'reject',
+      program: approve ? program : null,
+    );
+    await _log(
+      actor,
+      '${approve ? 'Approved' : 'Rejected'} coordinator registration for ${target.email}',
+    );
+  }
+
+  Future<void> setCoordinatorProgram({
+    required AppUser actor,
+    required AppUser target,
+    required String program,
+  }) async {
+    if (actor.role != UserRole.admin || !target.isApprovedCoordinator) {
+      throw StateError(
+        'Only a college administrator can set a coordinator’s program.',
+      );
+    }
+    await _submitCoordinatorAction(
+      actor: actor,
+      target: target,
+      action: 'set-program',
+      program: program,
+    );
+    await _log(
+      actor,
+      'Set the CAS program for ${target.displayName} to $program',
+    );
+  }
+
+  Future<void> _submitCoordinatorAction({
+    required AppUser actor,
+    required AppUser target,
+    required String action,
+    String? program,
+  }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null || currentUser.uid != actor.uid) {
       throw StateError(
@@ -1910,15 +2070,13 @@ class PracticumRepository {
         },
         body: jsonEncode({
           'uid': target.uid,
-          'action': approve ? 'approve' : 'reject',
+          'action': action,
+          if (program != null) 'program': program,
         }),
       );
     } catch (error) {
       throw StateError(
-        'The coordinator approval service could not be reached. For local '
-        'testing, start tools/approval_server.mjs and set '
-        'COORDINATOR_APPROVAL_API_URL in config/local.json. On Vercel, deploy '
-        'the included /api/coordinator-approval endpoint. Details: $error',
+        'The coordinator account service could not be reached. Details: $error',
       );
     }
 
@@ -1933,15 +2091,10 @@ class PracticumRepository {
       final message = payload?['error']?.toString();
       throw StateError(
         message == null || message.isEmpty
-            ? 'Coordinator approval failed (${response.statusCode}).'
+            ? 'Coordinator account update failed (${response.statusCode}).'
             : message,
       );
     }
-
-    await _log(
-      actor,
-      '${approve ? 'Approved' : 'Rejected'} coordinator registration for ${target.email}',
-    );
   }
 
   Future<void> setUserActive({
@@ -2323,8 +2476,8 @@ class PracticumRepository {
     }
   }
 
-  void _queueLog(WriteBatch batch, AppUser actor, String action) {
-    batch.set(_db.collection('activity_logs').doc(), {
+  void _queueLog(_SetRecord set, AppUser actor, String action) {
+    set(_db.collection('activity_logs').doc(), {
       'userId': actor.uid,
       'userName': actor.displayName,
       'action': action,
@@ -2333,7 +2486,7 @@ class PracticumRepository {
   }
 
   void _queueTargetedNotification({
-    required WriteBatch batch,
+    required _SetRecord set,
     required AppUser actor,
     required String targetUserId,
     required String targetRole,
@@ -2342,7 +2495,7 @@ class PracticumRepository {
     required String type,
     required String relatedId,
   }) {
-    batch.set(_db.collection('notifications').doc(), {
+    set(_db.collection('notifications').doc(), {
       'title': title,
       'message': message,
       'targetRole': 'user:$targetUserId',
@@ -2391,8 +2544,12 @@ class PracticumRepository {
     if (actor.role != UserRole.coordinator) {
       throw StateError('This action is restricted to authorized staff.');
     }
-    final snapshot = await _db.collection('users').doc(studentId).get();
-    final data = snapshot.data();
+    final users = _db.collection('users');
+    final snapshots = await Future.wait([
+      users.doc(studentId).get(),
+      users.doc(actor.uid).get(),
+    ]);
+    final data = snapshots[0].data();
     if (data == null ||
         data['role'] != UserRole.student.value ||
         data['coordinatorId'] != actor.uid) {
@@ -2400,12 +2557,21 @@ class PracticumRepository {
         'This student intern is not assigned to your Program Coordinator account.',
       );
     }
+    final coordinator = snapshots[1].data();
+    if (coordinator == null ||
+        coordinator['role'] != 'coordinator' ||
+        coordinator['approvalStatus'] != 'approved' ||
+        coordinator['active'] != true ||
+        !AppUser.fromMap(
+          actor.uid,
+          coordinator,
+        ).canCoordinate(AppUser.fromMap(studentId, data))) {
+      throw StateError('This student intern is outside your CAS program.');
+    }
   }
 
-  Future<void> _backfillCoordinatorAssignment({
-    required String studentId,
-    required String? coordinatorId,
-  }) async {
+  Future<void> _backfillCoordinatorAssignment(String studentId) async {
+    final studentRef = _db.collection('users').doc(studentId);
     const collections = [
       'requirements',
       'dtr_entries',
@@ -2420,15 +2586,18 @@ class PracticumRepository {
           .where((doc) => doc.data()['archived'] != true)
           .toList();
       for (var offset = 0; offset < active.length; offset += 450) {
-        final batch = _db.batch();
         final endIndex = min(offset + 450, active.length);
-        for (final doc in active.sublist(offset, endIndex)) {
-          batch.update(doc.reference, {
-            'coordinatorId': coordinatorId,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
-        await batch.commit();
+        final records = active.sublist(offset, endIndex);
+        await _db.runTransaction((transaction) async {
+          final student = (await transaction.get(studentRef)).data();
+          if (student == null) return;
+          for (final doc in records) {
+            transaction.update(doc.reference, {
+              'coordinatorId': student['coordinatorId'],
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        });
       }
     }
   }
@@ -2437,6 +2606,7 @@ class PracticumRepository {
     String studentId, {
     required AppUser actor,
     WriteBatch? batch,
+    Transaction? transaction,
     String? reviewCollection,
     String? reviewId,
     ReviewStatus? reviewStatus,
@@ -2445,7 +2615,10 @@ class PracticumRepository {
   }) async {
     if (studentId.isEmpty) return;
 
-    final userSnapshot = await _db.collection('users').doc(studentId).get();
+    final userReference = _db.collection('users').doc(studentId);
+    final userSnapshot = transaction == null
+        ? await userReference.get()
+        : await transaction.get(userReference);
     final storedUser = userSnapshot.data();
     final userData = storedUser == null
         ? null
@@ -2457,9 +2630,12 @@ class PracticumRepository {
     final profileReference = _db
         .collection('internship_profiles')
         .doc(studentId);
-    final profileSnapshot = await profileReference.get();
+    final profileSnapshot = transaction == null
+        ? await profileReference.get()
+        : await transaction.get(profileReference);
     final profileData = {...?profileSnapshot.data(), ...?profileChanges};
-    final writes = batch ?? _db.batch();
+    final writes = transaction == null ? batch ?? _db.batch() : null;
+    final _SetRecord set = transaction == null ? writes!.set : transaction.set;
     Query<Map<String, dynamic>> studentQuery(String collection) {
       Query<Map<String, dynamic>> query = _db
           .collection(collection)
@@ -2650,7 +2826,7 @@ class PracticumRepository {
         userData['academicYear'] as String? ??
         profileData['academicYear'] as String?;
 
-    writes.set(profileReference, {
+    set(profileReference, {
       'status': nextStatus,
       'coordinatorId': coordinatorId,
       'academicYear': academicYear,
@@ -2663,7 +2839,7 @@ class PracticumRepository {
 
     if (previousStatus != nextStatus && actor.role.isStaff) {
       _queueTargetedNotification(
-        batch: writes,
+        set: set,
         actor: actor,
         targetUserId: studentId,
         targetRole: UserRole.student.value,
@@ -2673,7 +2849,7 @@ class PracticumRepository {
         relatedId: studentId,
       );
     }
-    if (batch == null) await writes.commit();
+    if (batch == null && writes != null) await writes.commit();
   }
 
   Future<String> _uploadFile({

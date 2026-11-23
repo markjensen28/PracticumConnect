@@ -839,117 +839,17 @@ class _StudentInternshipProfileScreenState
   );
 
   Future<void> _showCoordinatorAssignment(BuildContext context) async {
-    if (actor.role != UserRole.admin) return;
-
-    final coordinators =
-        (await repository.watchUsers(role: UserRole.coordinator).first)
-            .where(
-              (coordinator) =>
-                  coordinator.active && coordinator.isApprovedCoordinator,
-            )
-            .toList()
-          ..sort((a, b) => a.displayName.compareTo(b.displayName));
-
-    if (!context.mounted) return;
-    if (coordinators.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No approved Program Coordinator accounts are available yet.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    AppUser selected = coordinators.firstWhere(
-      (item) => item.uid == student.coordinatorId,
-      orElse: () => coordinators.first,
+    final coordinator = await showProgramCoordinatorAssignment(
+      context,
+      actor: actor,
+      student: student,
+      repository: repository,
     );
-
-    final assigned = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(
-            student.coordinatorId == null
-                ? 'Assign Program Coordinator'
-                : 'Change Program Coordinator',
-          ),
-          content: SizedBox(
-            width: 430,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Assign ${student.displayName} to an approved Program Coordinator.',
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<AppUser>(
-                  isExpanded: true,
-                  initialValue: selected,
-                  decoration: const InputDecoration(
-                    labelText: 'Program Coordinator',
-                    prefixIcon: Icon(Icons.supervisor_account_outlined),
-                  ),
-                  items: coordinators
-                      .map(
-                        (coordinator) => DropdownMenuItem<AppUser>(
-                          value: coordinator,
-                          child: Text(
-                            coordinator.displayName,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(() => selected = value);
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                try {
-                  await repository.assignStudent(
-                    actor: actor,
-                    student: student,
-                    coordinator: selected,
-                  );
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, true);
-                  }
-                } catch (error) {
-                  if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(
-                      dialogContext,
-                    ).showSnackBar(SnackBar(content: Text('$error')));
-                  }
-                }
-              },
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Assign'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (assigned == true && context.mounted) {
+    if (coordinator != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${student.displayName} was assigned to ${selected.displayName}.',
+            '${student.displayName} was assigned to ${coordinator.displayName}.',
           ),
         ),
       );
@@ -1085,6 +985,7 @@ class _StudentInternshipProfileScreenState
                             label: 'Program *',
                             initialValue: selectedProgram,
                             options: casPrograms,
+                            enabled: actor.role == UserRole.admin,
                             hint: 'Select a program',
                             onChanged: (value) => selectedProgram = value,
                             validator: (value) =>

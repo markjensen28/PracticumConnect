@@ -612,7 +612,9 @@ class _NotificationDetails extends StatelessWidget {
                   notice.relatedId!,
                 );
                 if (!context.mounted) return;
-                if (student == null) {
+                if (student == null ||
+                    student.coordinatorId != user.uid ||
+                    !user.canCoordinate(student)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text(

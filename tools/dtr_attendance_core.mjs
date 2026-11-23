@@ -3,6 +3,7 @@ import './trusted_certificates.mjs';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { sameCoordinatorProgram } from './cas_programs.mjs';
 
 function ensureAdminApp() {
   if (getApps().length > 0) return getApps()[0];
@@ -279,7 +280,8 @@ async function closeEarly(actor, body) {
   const record = snapshot.data();
   if (!snapshot.exists || record.archived === true || record?.attendanceState !== 'in_progress') return responseError(409, 'The selected shift is no longer open.');
   const student = (await db.collection('users').doc(record.studentId).get()).data();
-  if (actor.profile.role === 'coordinator' && (record.coordinatorId !== uid || student?.coordinatorId !== uid)) {
+  if (profile.role === 'coordinator' && (record.coordinatorId !== uid || student?.coordinatorId !== uid ||
+      !sameCoordinatorProgram(profile, student))) {
     return responseError(403, 'You can close early only shifts belonging to your assigned interns.');
   }
   const now = new Date();

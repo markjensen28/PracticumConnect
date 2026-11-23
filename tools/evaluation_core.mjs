@@ -4,7 +4,7 @@ import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { evaluationEmailConfigured, sendEvaluationEmail, singleMailbox } from './school_email.mjs';
-import { programAppliesTo } from './cas_programs.mjs';
+import { programAppliesTo, sameCoordinatorProgram } from './cas_programs.mjs';
 import { createHash, randomBytes } from 'node:crypto';
 
 function ensureAdminApp() {
@@ -246,7 +246,7 @@ async function authorizeStaff(authorization) {
     };
   }
 
-  return { db, uid: decoded.uid, isCoordinator };
+  return { db, uid: decoded.uid, isCoordinator, profile: staff };
 }
 
 export async function createStaffEvaluation({ authorization, body }) {
@@ -294,7 +294,7 @@ export async function createStaffEvaluation({ authorization, body }) {
     };
   }
 
-  if (isCoordinator && student.coordinatorId !== uid) {
+  if (isCoordinator && (student.coordinatorId !== uid || !sameCoordinatorProgram(staff.profile, student))) {
     return {
       status: 403,
       payload: { error: 'This student is not assigned to your coordinator account.' },
@@ -446,7 +446,8 @@ export async function sendEvaluationMail({ body, authorization }, deliver = send
     if (closed) return closed;
     if (staff?.isCoordinator) {
       const student = (await tx.get(db.collection('users').doc(evaluation.studentId))).data();
-      if (evaluation.coordinatorId !== staff.uid || student?.coordinatorId !== staff.uid) {
+      if (evaluation.coordinatorId !== staff.uid || student?.coordinatorId !== staff.uid ||
+          !sameCoordinatorProgram(staff.profile, student)) {
         return { status: 403, payload: { error: 'Evaluation is not assigned to you.' } };
       }
     }
@@ -532,7 +533,8 @@ async function evaluationFileAction(authorization, input) {
     const record = (await staff.db.collection('supervisor_evaluations').doc(token).get()).data();
     if (!record?.completedPath || record.status !== 'submitted') throw invalid('Completed PDF unavailable.', 404);
     const student = (await staff.db.collection('users').doc(record.studentId).get()).data();
-    if (staff.isCoordinator && (student?.coordinatorId !== staff.uid || record.coordinatorId !== staff.uid)) {
+    if (staff.isCoordinator && (student?.coordinatorId !== staff.uid || record.coordinatorId !== staff.uid ||
+        !sameCoordinatorProgram(staff.profile, student))) {
       throw invalid('This evaluation is outside your assignment.', 403);
     }
     return {status:200, payload:{url:await signedFileUrl(record.completedPath)}};

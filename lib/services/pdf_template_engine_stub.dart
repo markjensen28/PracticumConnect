@@ -5,10 +5,14 @@ class PdfTemplateEngine {
   static const available = false;
   static Future<List<PdfTemplateField>> inspect(Uint8List bytes) async =>
       throw UnsupportedError('Open the web app to configure PDF form fields.');
+  static Future<Map<String, List<PdfFieldLocation>>> locate(
+    Uint8List bytes,
+  ) async => const {};
   static Future<Uint8List> fill(
     Uint8List bytes,
     List<PdfTemplateField> fields,
-    Map<String, dynamic> values,
-  ) async =>
+    Map<String, dynamic> values, {
+    bool templateOnly = false,
+  }) async =>
       throw UnsupportedError('Open the web app to fill this PDF template.');
 }

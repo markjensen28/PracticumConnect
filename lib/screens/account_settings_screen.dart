@@ -40,7 +40,12 @@ class AccountSettingsScreen extends StatelessWidget {
                     ),
                   if (user.staffId?.isNotEmpty == true)
                     _SettingsRow(label: 'Staff ID', value: user.staffId!),
-                  if (user.program?.isNotEmpty == true)
+                  if (user.role == UserRole.coordinator)
+                    _SettingsRow(
+                      label: 'Program',
+                      value: user.casProgram ?? 'Program not set',
+                    )
+                  else if (user.program?.isNotEmpty == true)
                     _SettingsRow(label: 'Program', value: user.program!),
                   if (user.college case final college?)
                     _SettingsRow(label: 'College', value: college)

@@ -53,6 +53,33 @@
     throw new Error(`Unsupported field: ${field.getName()}. Use text, checkbox, or single-choice fields.`);
   }
 
+  function visibleWidgetBounds(widget, page) {
+    const { AnnotationFlags } = library();
+    if (widget.getFlags() & (AnnotationFlags.Invisible | AnnotationFlags.Hidden | AnnotationFlags.NoView)) return null;
+    const media = page.getMediaBox();
+    const crop = page.getCropBox();
+    const originX = Math.max(media.x, crop.x);
+    const originY = Math.max(media.y, crop.y);
+    const width = Math.min(media.x + media.width, crop.x + crop.width) - originX;
+    const height = Math.min(media.y + media.height, crop.y + crop.height) - originY;
+    const rect = widget.getRectangle();
+    const clamp = value => Math.max(0, Math.min(1, value));
+    const left = clamp((rect.x - originX) / width);
+    const right = clamp((rect.x + rect.width - originX) / width);
+    const bottom = clamp((rect.y - originY) / height);
+    const top = clamp((rect.y + rect.height - originY) / height);
+    if (!(width > 0 && height > 0 && right > left && top > bottom)) return null;
+    const w = right - left;
+    const h = top - bottom;
+    // PDF rectangles use bottom-left coordinates before the page is rotated.
+    switch ((page.getRotation().angle % 360 + 360) % 360) {
+      case 90: return { x: bottom, y: left, width: h, height: w };
+      case 180: return { x: 1 - right, y: bottom, width: w, height: h };
+      case 270: return { x: 1 - top, y: 1 - right, width: h, height: w };
+      default: return { x: left, y: 1 - top, width: w, height: h };
+    }
+  }
+
   async function getFont(doc) {
     if (!root.fontkit) throw new Error('PDF fonts did not load. Refresh the page.');
     doc.registerFontkit(root.fontkit);
@@ -63,6 +90,33 @@
     return doc.embedFont(await fontBytes, { subset: true });
   }
 
+  function lockValue(field) {
+    const { PDFName } = library();
+    const dict = field.acroField.dict;
+    const value = dict.get(PDFName.of('V'));
+    const defaultValue = PDFName.of('DV');
+    if (value === undefined) dict.delete(defaultValue);
+    else dict.set(defaultValue, value);
+    field.disableRequired();
+    field.enableReadOnly();
+  }
+
+  function leaveFieldBlank(field) {
+    const { PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup } = library();
+    if (field instanceof PDFTextField) {
+      if (field.getText()) field.setText(undefined);
+    } else if (field instanceof PDFCheckBox) {
+      if (field.isChecked()) field.uncheck();
+    } else if (field instanceof PDFDropdown) {
+      if (field.getSelected().length) field.clear();
+    } else if (field instanceof PDFRadioGroup) {
+      if (field.getSelected()) field.clear();
+    } else {
+      return;
+    }
+    lockValue(field);
+  }
+
   root.sipPdfTemplates = {
     async inspect(bytes) {
       const doc = await open(bytes);
@@ -71,7 +125,31 @@
       return JSON.stringify(fields);
     },
 
-    async fill(bytes, fieldsJson, valuesJson) {
+    async locate(bytes) {
+      const doc = await open(bytes);
+      const annotations = new Map();
+      for (const [index, page] of doc.getPages().entries()) {
+        for (const reference of page.node.Annots()?.asArray() ?? []) {
+          annotations.set(doc.context.lookup(reference), { page, index });
+        }
+      }
+      const fields = Object.create(null);
+      for (const field of doc.getForm().getFields()) {
+        fields[field.getName()] = field.acroField.getWidgets().flatMap(widget => {
+          const target = annotations.get(widget.dict);
+          if (!target) return [];
+          try {
+            const bounds = visibleWidgetBounds(widget, target.page);
+            return bounds ? [{ page: target.index + 1, ...bounds }] : [];
+          } catch {
+            return [];
+          }
+        }).sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+      }
+      return JSON.stringify(fields);
+    },
+
+    async fill(bytes, fieldsJson, valuesJson, templateOnly = false) {
       const doc = await open(bytes);
       const form = doc.getForm();
       const fields = JSON.parse(fieldsJson);
@@ -83,12 +161,23 @@
       for (const config of fields) {
         if (!config.name || names.has(config.name)) throw new Error('Every field must have a unique name.');
         names.add(config.name);
-        const value = values[config.name];
-        if (config.required && (config.type === 'checkbox' ? value !== true : !String(value ?? '').trim())) {
+        const placed = Number.isInteger(config.page);
+        if (config.entry === 'hidden') {
+          if (!placed) leaveFieldBlank(form.getFieldMaybe(config.name));
+          continue;
+        }
+        const locked = config.entry === 'locked';
+        const prefilled = config.entry === 'prefilled';
+        if (templateOnly && !locked && !prefilled) continue;
+
+        const usePreset = locked || (prefilled && (templateOnly || !Object.hasOwn(values, config.name)));
+        const value = usePreset ? config.presetValue : values[config.name];
+        const required = !locked && config.required;
+        if (!templateOnly && required && (config.type === 'checkbox' ? value !== true : !String(value ?? '').trim())) {
           throw new Error(`Complete ${config.label || config.name}.`);
         }
         let field;
-        if (Number.isInteger(config.page)) {
+        if (placed) {
           const page = doc.getPages()[config.page - 1];
           if (!page) throw new Error('A mapped field refers to a missing page.');
           const { x, y, width, height } = config;
@@ -109,7 +198,7 @@
         } else {
           field = form.getField(config.name);
         }
-        config.required ? field.enableRequired() : field.disableRequired();
+        required ? field.enableRequired() : field.disableRequired();
         if (field instanceof library().PDFTextField) {
           const text = String(value ?? '');
           const limit = field.getMaxLength() ?? config.maxLength ?? 4000;
@@ -126,9 +215,9 @@
           if (value) {
             if (!field.getOptions().includes(value)) throw new Error(`Choose a valid option for ${config.label}.`);
             field.select(value);
-          } else if (field instanceof library().PDFDropdown) field.clear();
-          else field.clear();
+          } else field.clear();
         } else throw new Error(`Unsupported field: ${config.name}.`);
+        if (locked) lockValue(field);
       }
       form.updateFieldAppearances(font);
       return doc.save();

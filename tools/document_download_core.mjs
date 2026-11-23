@@ -2,7 +2,7 @@ import './trusted_certificates.mjs';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { ensureAdminApp } from './staff_claims_core.mjs';
-import { programAppliesTo } from './cas_programs.mjs';
+import { programAppliesTo, sameCoordinatorProgram } from './cas_programs.mjs';
 
 export function canReadDocument(actorId, actor, owner, path) {
   if (actor?.active !== true) return false;
@@ -12,7 +12,8 @@ export function canReadDocument(actorId, actor, owner, path) {
   if (!['student', 'coordinator'].includes(actor.role)) return false;
   if (actorId === ownerId || folder === 'form_templates') return true;
   return actor.role === 'coordinator' && owner?.role === 'student' &&
-    owner.coordinatorId === actorId && ['requirements', 'dtr-checkins'].includes(folder);
+    owner.coordinatorId === actorId && sameCoordinatorProgram(actor, owner) &&
+    ['requirements', 'dtr-checkins'].includes(folder);
 }
 
 async function isPublishedTemplate(db, actor, bucket, path) {

@@ -72,7 +72,20 @@ class AppUser {
   final String? photoUrl;
   final bool active;
 
-  String? get college => role == UserRole.student ? casCollegeName : null;
+  String? get college => role == UserRole.admin ? null : casCollegeName;
+
+  String? get casProgram =>
+      canonicalCasProgram(program) ??
+      (role == UserRole.coordinator ? canonicalCasProgram(department) : null);
+
+  bool canCoordinate(AppUser student) {
+    final program = casProgram;
+    return active &&
+        isApprovedCoordinator &&
+        student.role == UserRole.student &&
+        program != null &&
+        program == student.casProgram;
+  }
 
   bool get isPendingCoordinator =>
       role == UserRole.coordinator && approvalStatus == 'pending';

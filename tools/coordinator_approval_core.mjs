@@ -1,6 +1,7 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { canonicalCasProgram, casCollegeName, coordinatorProgram } from './cas_programs.mjs';
 
 function ensureAdminApp() {
   if (getApps().length > 0) return getApps()[0];
@@ -45,15 +46,15 @@ function parseBody(body) {
   return {};
 }
 
-export async function reviewCoordinatorRequest({ authorization, body }) {
-  ensureAdminApp();
+export async function reviewCoordinatorRequest({ authorization, body }, dependencies = {}) {
   const token = bearerToken(authorization);
   if (!token) {
     return { status: 401, payload: { error: 'Administrator sign-in is required.' } };
   }
 
-  const auth = getAuth();
-  const db = getFirestore();
+  if (!dependencies.auth || !dependencies.db) ensureAdminApp();
+  const auth = dependencies.auth || getAuth();
+  const db = dependencies.db || getFirestore();
   const decoded = await auth.verifyIdToken(token, true);
   const adminSnapshot = await db.collection('users').doc(decoded.uid).get();
   const adminProfile = adminSnapshot.data();
@@ -72,10 +73,10 @@ export async function reviewCoordinatorRequest({ authorization, body }) {
   const parsed = parseBody(body);
   const uid = String(parsed.uid || '').trim();
   const action = String(parsed.action || '').trim().toLowerCase();
-  if (!uid || !['approve', 'reject'].includes(action)) {
+  if (!uid || uid.includes('/') || !['approve', 'reject', 'set-program'].includes(action)) {
     return {
       status: 400,
-      payload: { error: 'A coordinator uid and approve/reject action are required.' },
+      payload: { error: 'A coordinator account and a valid action are required.' },
     };
   }
 
@@ -85,11 +86,42 @@ export async function reviewCoordinatorRequest({ authorization, body }) {
   if (!targetSnapshot.exists || target?.role !== 'coordinator') {
     return { status: 404, payload: { error: 'Coordinator registration request was not found.' } };
   }
+  if (action === 'set-program') {
+    const program = canonicalCasProgram(parsed.program);
+    if (!program) return { status: 400, payload: { error: 'Select one of the four CAS programs.' } };
+    return db.runTransaction(async transaction => {
+      const current = (await transaction.get(targetRef)).data();
+      if (current?.role !== 'coordinator' || current.approvalStatus !== 'approved') {
+        return { status: 409, payload: { error: 'Only approved coordinator accounts can change programs.' } };
+      }
+      const students = await transaction.get(db.collection('users').where('coordinatorId', '==', uid));
+      if (students.docs.some(doc => {
+        const student = doc.data();
+        return student.role === 'student' && canonicalCasProgram(student.program) !== program;
+      })) {
+        return { status: 409, payload: {
+          error: 'Reassign or remove students with a different or missing program before saving this coordinator’s program.',
+        } };
+      }
+      transaction.update(targetRef, {
+        program,
+        department: casCollegeName,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { status: 200, payload: { ok: true, action, uid, program } };
+    });
+  }
+
   if (target?.approvalStatus !== 'pending') {
     return {
       status: 409,
       payload: { error: `This coordinator request is already ${target?.approvalStatus || 'processed'}.` },
     };
+  }
+
+  const program = parsed.program == null ? coordinatorProgram(target) : canonicalCasProgram(parsed.program);
+  if (action === 'approve' && !program) {
+    return { status: 400, payload: { error: 'Select a CAS program before approving this coordinator.' } };
   }
 
   const targetAuth = await auth.getUser(uid);
@@ -104,6 +136,8 @@ export async function reviewCoordinatorRequest({ authorization, body }) {
     await targetRef.update({
       approvalStatus: 'approved',
       active: true,
+      program,
+      department: casCollegeName,
       approvedBy: decoded.uid,
       approvedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

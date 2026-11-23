@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import '../core/app_theme.dart';
 
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
+import 'workflow_shared.dart';
 import 'workspace_select_field.dart';
 
 class TorScreen extends StatelessWidget {
@@ -486,7 +488,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
           if (query.isEmpty) return true;
           final searchable =
               '${item.displayName} ${item.email} '
-              '${item.studentNumber ?? ''} ${item.staffId ?? ''} ${item.role.label}';
+              '${item.studentNumber ?? ''} ${item.staffId ?? ''} ${item.role.label} '
+              '${item.casProgram ?? ''}';
           return searchable.toLowerCase().contains(query);
         }).toList();
 
@@ -527,6 +530,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
                               item: item,
                               studentsOnly: studentsOnly,
                               currentUser: user,
+                              onSetCoordinatorProgram:
+                                  !studentsOnly &&
+                                      user.role == UserRole.admin &&
+                                      item.isApprovedCoordinator
+                                  ? () => _setCoordinatorProgram(context, item)
+                                  : null,
                               onAssignCoordinator: studentsOnly
                                   ? () => _assignCoordinator(context, item)
                                   : null,
@@ -586,18 +595,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
     AppUser target,
     bool approve,
   ) async {
+    if (approve) {
+      await _setCoordinatorProgram(context, target, approving: true);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: Icon(
-          approve ? Icons.verified_user_outlined : Icons.person_off_outlined,
-          color: approve ? AppTheme.success : AppTheme.danger,
-        ),
-        title: Text(approve ? 'Approve coordinator?' : 'Reject request?'),
+        icon: const Icon(Icons.person_off_outlined, color: AppTheme.danger),
+        title: const Text('Reject request?'),
         content: Text(
-          approve
-              ? 'Approve ${target.displayName} as a school coordinator? This will activate the account and grant coordinator permissions.'
-              : 'Reject ${target.displayName}\'s coordinator registration request? The account will remain unable to access the system.',
+          'Reject ${target.displayName}\'s coordinator registration request? The account will remain unable to access the system.',
           textAlign: TextAlign.center,
         ),
         actions: [
@@ -607,10 +615,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            style: !approve
-                ? FilledButton.styleFrom(backgroundColor: AppTheme.danger)
-                : null,
-            child: Text(approve ? 'Approve' : 'Reject'),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Reject'),
           ),
         ],
       ),
@@ -621,15 +627,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
       await repository.reviewCoordinatorRegistration(
         actor: user,
         target: target,
-        approve: approve,
+        approve: false,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              approve
-                  ? '${target.displayName} is now an approved coordinator.'
-                  : '${target.displayName}\'s coordinator request was rejected.',
+              '${target.displayName}\'s coordinator request was rejected.',
             ),
           ),
         );
@@ -643,64 +647,67 @@ class _PeopleScreenState extends State<PeopleScreen> {
     }
   }
 
-  Future<void> _assignCoordinator(BuildContext context, AppUser student) async {
-    if (user.role == UserRole.coordinator) {
-      await repository.assignStudent(
-        actor: user,
-        student: student,
-        coordinator: user,
-      );
-      return;
-    }
-    final coordinators =
-        (await repository.watchUsers(role: UserRole.coordinator).first)
-            .where(
-              (coordinator) =>
-                  coordinator.active && coordinator.isApprovedCoordinator,
-            )
-            .toList();
-    if (!context.mounted) return;
-    if (coordinators.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No approved coordinators were found.')),
-      );
-      return;
-    }
-    AppUser selected = coordinators.first;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('Assign ${student.displayName}'),
-          content: SizedBox(
-            width: 420,
-            child: WorkspaceSelectField(
-              label: 'Program Coordinator',
-              initialValue: selected,
-              options: coordinators,
-              optionLabel: (coordinator) => coordinator.displayName,
-              onChanged: (value) => selected = value,
-            ),
+  Future<void> _setCoordinatorProgram(
+    BuildContext context,
+    AppUser target, {
+    bool approving = false,
+  }) async {
+    var program = target.casProgram;
+    final saved = await showWorkspaceEditorDialog(
+      context,
+      title: approving
+          ? 'Approve Program Coordinator'
+          : 'Set coordinator program',
+      saveLabel: approving ? 'Approve' : 'Save program',
+      width: 420,
+      fields: (context, update) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 14,
+        children: [
+          Text(target.displayName),
+          WorkspaceSelectField<String>(
+            label: 'Program',
+            hint: 'Select a CAS program',
+            initialValue: program,
+            options: casPrograms,
+            onChanged: (value) => program = value,
+            validator: (value) =>
+                value == null ? 'Select a CAS program.' : null,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                await repository.assignStudent(
-                  actor: user,
-                  student: student,
-                  coordinator: selected,
-                );
-                if (dialogContext.mounted) Navigator.pop(dialogContext);
-              },
-              child: const Text('Assign'),
-            ),
-          ],
-        ),
+        ],
       ),
+      onSave: () => approving
+          ? repository.reviewCoordinatorRegistration(
+              actor: user,
+              target: target,
+              approve: true,
+              program: program,
+            )
+          : repository.setCoordinatorProgram(
+              actor: user,
+              target: target,
+              program: program!,
+            ),
+    );
+    if (saved && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            approving
+                ? '${target.displayName} is now an approved coordinator.'
+                : 'Program updated for ${target.displayName}.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _assignCoordinator(BuildContext context, AppUser student) async {
+    await showProgramCoordinatorAssignment(
+      context,
+      actor: user,
+      student: student,
+      repository: repository,
     );
   }
 }
@@ -798,7 +805,7 @@ class _CoordinatorRequestPanel extends StatelessWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'Staff ID: ${item.staffId ?? 'Not supplied'}  •  ${item.department ?? 'Department not supplied'}',
+                              'Staff ID: ${item.staffId ?? 'Not supplied'}  •  ${item.casProgram ?? 'Program not set'}',
                               style: const TextStyle(
                                 color: AppTheme.text,
                                 fontSize: AppTheme.fontSmall,
@@ -995,6 +1002,7 @@ class _AccountCard extends StatelessWidget {
     this.onAssignCoordinator,
     this.onUnassignCoordinator,
     this.onActiveChanged,
+    this.onSetCoordinatorProgram,
   });
 
   final AppUser item;
@@ -1003,6 +1011,7 @@ class _AccountCard extends StatelessWidget {
   final VoidCallback? onAssignCoordinator;
   final VoidCallback? onUnassignCoordinator;
   final ValueChanged<bool>? onActiveChanged;
+  final VoidCallback? onSetCoordinatorProgram;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -1056,7 +1065,18 @@ class _AccountCard extends StatelessWidget {
                     fontSize: AppTheme.fontSmall,
                   ),
                 ),
-              if (!studentsOnly && item.staffId != null)
+              if (!studentsOnly && item.isApprovedCoordinator)
+                Text(
+                  [
+                    if (item.staffId != null) 'Staff ID ${item.staffId}',
+                    item.casProgram ?? 'Program not set',
+                  ].join(' • '),
+                  style: const TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: AppTheme.fontSmall,
+                  ),
+                )
+              else if (!studentsOnly && item.staffId != null)
                 Text(
                   'Staff ID ${item.staffId} • ${item.department ?? 'No department'}',
                   style: const TextStyle(
@@ -1075,6 +1095,12 @@ class _AccountCard extends StatelessWidget {
             ],
           ),
         ),
+        if (onSetCoordinatorProgram != null)
+          IconButton(
+            tooltip: 'Set program for ${item.displayName}',
+            onPressed: onSetCoordinatorProgram,
+            icon: const Icon(Icons.edit_outlined, size: 19),
+          ),
       ],
     );
 

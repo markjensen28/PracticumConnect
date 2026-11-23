@@ -5,8 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/app_config.dart';
 import '../core/app_theme.dart';
 import '../core/ssu_brand.dart';
+import '../models/app_user.dart';
 import '../models/records.dart';
 import '../services/practicum_repository.dart';
+import 'workspace_select_field.dart';
 
 class WorkflowPage extends StatelessWidget {
   const WorkflowPage({
@@ -472,6 +474,86 @@ class DashboardWelcome extends StatelessWidget {
       );
     },
   );
+}
+
+Future<AppUser?> showProgramCoordinatorAssignment(
+  BuildContext context, {
+  required AppUser actor,
+  required AppUser student,
+  required PracticumRepository repository,
+}) async {
+  if (actor.role != UserRole.admin) return null;
+  final program = student.casProgram;
+  if (program == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Set the student’s CAS program before assigning a coordinator.',
+        ),
+      ),
+    );
+    return null;
+  }
+  List<AppUser> coordinators;
+  try {
+    coordinators =
+        (await repository.watchUsers(role: UserRole.coordinator).first)
+            .where((coordinator) => coordinator.canCoordinate(student))
+            .toList();
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not load Program Coordinators. Try again.'),
+        ),
+      );
+    }
+    return null;
+  }
+  if (!context.mounted) return null;
+  if (coordinators.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'No active, approved coordinator is assigned to $program.',
+        ),
+      ),
+    );
+    return null;
+  }
+
+  var selected = coordinators.firstWhere(
+    (coordinator) => coordinator.uid == student.coordinatorId,
+    orElse: () => coordinators.first,
+  );
+  final saved = await showWorkspaceEditorDialog(
+    context,
+    title: student.coordinatorId == null
+        ? 'Assign Program Coordinator'
+        : 'Change Program Coordinator',
+    saveLabel: 'Assign',
+    width: 440,
+    fields: (context, update) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 14,
+      children: [
+        Text('${student.displayName}  •  $program'),
+        WorkspaceSelectField<AppUser>(
+          label: 'Program Coordinator',
+          initialValue: selected,
+          options: coordinators,
+          optionLabel: (coordinator) => coordinator.displayName,
+          onChanged: (coordinator) => selected = coordinator,
+        ),
+      ],
+    ),
+    onSave: () => repository.assignStudent(
+      actor: actor,
+      student: student,
+      coordinator: selected,
+    ),
+  );
+  return saved ? selected : null;
 }
 
 Future<bool> showWorkspaceEditorDialog(

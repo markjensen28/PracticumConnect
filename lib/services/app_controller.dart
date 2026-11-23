@@ -46,7 +46,7 @@ class AppController extends ChangeNotifier {
     required String password,
     required String displayName,
     required String staffId,
-    required String department,
+    required String program,
   }) async {
     busy = true;
     error = null;
@@ -57,7 +57,7 @@ class AppController extends ChangeNotifier {
         password: password,
         displayName: displayName,
         staffId: staffId,
-        department: department,
+        program: program,
       );
       user = null;
       return true;

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/app_user.dart';
+import '../models/cas_programs.dart';
 
 class AuthService {
   Future<AppUser?> restoreUser() async {
@@ -30,8 +31,12 @@ class AuthService {
     required String password,
     required String displayName,
     required String staffId,
-    required String department,
+    required String program,
   }) async {
+    final selectedProgram = canonicalCasProgram(program);
+    if (selectedProgram == null) {
+      throw ArgumentError('Select one of the four CAS programs.');
+    }
     final credential = await FirebaseAuth.instance
         .createUserWithEmailAndPassword(
           email: _normalizeEmail(email),
@@ -55,7 +60,9 @@ class AuthService {
             'role': UserRole.coordinator.value,
             'studentNumber': null,
             'staffId': staffId.trim(),
-            'department': department.trim(),
+            // Pending requests use the existing Firestore signup schema.
+            // Approval saves this choice as the account's canonical program.
+            'department': selectedProgram,
             'approvalStatus': 'pending',
             'active': false,
             'createdAt': FieldValue.serverTimestamp(),

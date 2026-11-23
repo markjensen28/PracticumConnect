@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
 import '../core/ssu_brand.dart';
+import '../models/cas_programs.dart';
 import '../services/app_controller.dart';
+import 'workspace_select_field.dart';
 
 const _authNavy = AppTheme.navy;
 const _authBlue = Color(0xFF1458AC);
@@ -31,13 +33,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _resetEmail = TextEditingController();
   final _name = TextEditingController();
   final _staffId = TextEditingController();
-  final _department = TextEditingController();
   final _signUpEmail = TextEditingController();
   final _signUpPassword = TextEditingController();
   final _confirmPassword = TextEditingController();
 
   _AuthView _view = _AuthView.login;
   _SignUpRole _signUpRole = _SignUpRole.student;
+  String? _program;
   bool _hideLoginPassword = true;
   bool _hideSignUpPassword = true;
 
@@ -48,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _resetEmail.dispose();
     _name.dispose();
     _staffId.dispose();
-    _department.dispose();
     _signUpEmail.dispose();
     _signUpPassword.dispose();
     _confirmPassword.dispose();
@@ -67,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _setSignUpRole(_SignUpRole role) {
     if (_signUpRole == role) return;
     _staffId.clear();
-    _department.clear();
+    _program = null;
     _signUpFormKey.currentState?.reset();
     widget.controller.clearError();
     setState(() => _signUpRole = role);
@@ -97,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
       password: _signUpPassword.text,
       displayName: _name.text,
       staffId: _staffId.text,
-      department: _department.text,
+      program: _program!,
     );
 
     if (!mounted || !success) return;
@@ -416,18 +417,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     : null,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _department,
+              WorkspaceSelectField<String>(
+                label: 'Program',
+                hint: 'Select a CAS program',
+                options: casPrograms,
+                initialValue: _program,
                 enabled: !widget.controller.busy,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                decoration: _authDecoration(
-                  'Department',
-                  Icons.account_balance_outlined,
-                ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter your department.'
-                    : null,
+                onChanged: (value) => _program = value,
+                validator: (value) =>
+                    value == null ? 'Select a CAS program.' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
